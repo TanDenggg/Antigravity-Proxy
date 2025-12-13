@@ -347,6 +347,15 @@ const showQuotaModal = async (account) => {
   try {
     const res = await getAccountQuota(account.id)
     quotaData.value = res.data?.data || res.data || {}
+
+    // 立即同步列表中的总体配额，避免与弹窗口径不一致
+    const overall = quotaData.value?.overallQuota
+    if (typeof overall === 'number') {
+      const target = accounts.value.find(a => a.id === account.id)
+      if (target) {
+        target.quota_remaining = overall
+      }
+    }
   } catch (error) {
     toast.error('获取配额详情失败')
   } finally {

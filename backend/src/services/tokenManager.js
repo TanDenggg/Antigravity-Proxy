@@ -112,7 +112,7 @@ export async function fetchProjectId(account) {
 /**
  * 获取账号的配额信息（所有模型）
  */
-export async function fetchQuotaInfo(account, model = 'gemini-2.5-flash') {
+export async function fetchQuotaInfo(account, model = null) {
     try {
         const response = await fetch(`${ANTIGRAVITY_CONFIG.base_url}/v1internal:fetchAvailableModels`, {
             method: 'POST',
@@ -131,20 +131,38 @@ export async function fetchQuotaInfo(account, model = 'gemini-2.5-flash') {
         }
 
         const data = await response.json();
-        const modelInfo = data.models?.[model];
+        const models = data.models || {};
 
-        if (modelInfo?.quotaInfo) {
-            const { remainingFraction, resetTime } = modelInfo.quotaInfo;
-            const resetTimestamp = resetTime ? new Date(resetTime).getTime() : null;
-            updateAccountQuota(account.id, remainingFraction, resetTimestamp);
+        // 计算“总体配额”：取所有模型 quotaInfo.remainingFraction 的最小值
+        let minQuota = 1;
+        let minQuotaResetTime = null;
 
-            return {
-                remainingFraction,
-                resetTime: resetTimestamp
-            };
+        for (const modelInfo of Object.values(models)) {
+            if (!modelInfo?.quotaInfo) continue;
+            const remainingFraction = modelInfo.quotaInfo.remainingFraction ?? 1;
+            const resetTimestamp = modelInfo.quotaInfo.resetTime ? new Date(modelInfo.quotaInfo.resetTime).getTime() : null;
+
+            if (remainingFraction < minQuota) {
+                minQuota = remainingFraction;
+                minQuotaResetTime = resetTimestamp;
+            }
         }
 
-        return null;
+        // 兼容：如果调用方指定了 model 且存在 quotaInfo，则返回该模型的信息（但 DB 仍写总体配额）
+        let selected = null;
+        if (model) {
+            const selectedInfo = models?.[model];
+            if (selectedInfo?.quotaInfo) {
+                selected = {
+                    remainingFraction: selectedInfo.quotaInfo.remainingFraction ?? 1,
+                    resetTime: selectedInfo.quotaInfo.resetTime ? new Date(selectedInfo.quotaInfo.resetTime).getTime() : null
+                };
+            }
+        }
+
+        updateAccountQuota(account.id, minQuota, minQuotaResetTime);
+
+        return selected || { remainingFraction: minQuota, resetTime: minQuotaResetTime };
     } catch (error) {
         console.error(`[Token] Failed to fetch quota for ${account.email}:`, error.message);
         throw error;
