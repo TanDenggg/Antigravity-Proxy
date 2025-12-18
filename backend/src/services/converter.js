@@ -1046,6 +1046,10 @@ export function convertAntigravityToAnthropic(antigravityResponse, requestId, mo
 
         // 再处理其他 blocks（text / tool_use / image）
         for (const part of otherParts) {
+            // 有些上游会把 Claude 的签名放在非 thought part 上（例如 functionCall part），这里也兜底采集
+            const sig = part.thoughtSignature || part.thought_signature;
+            if (sig) messageThinkingSignature = sig;
+
             if (part.text !== undefined) {
                 content.push({ type: 'text', text: part.text });
             }
@@ -1179,12 +1183,22 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
 	            });
 	        }
 
-        // 处理其他 parts（text 和 functionCall）
-        for (const part of otherParts) {
-            // 如果之前在 thinking 中，现在不是了，关闭 thinking 块
-            if (newState.inThinking) {
-                events.push({
-                    type: 'content_block_stop',
+	        // 处理其他 parts（text 和 functionCall）
+	        for (const part of otherParts) {
+	            // 兜底：部分上游会把签名放在非 thought part 上（例如 functionCall part）
+	            const sig = part.thoughtSignature || part.thought_signature;
+	            if (sig) {
+	                newState.lastThinkingSignature = sig;
+	                if (newState.pendingToolUseIds.length > 0) {
+	                    for (const id of newState.pendingToolUseIds) cacheClaudeThinkingSignature(id, sig);
+	                    newState.pendingToolUseIds = [];
+	                }
+	            }
+
+	            // 如果之前在 thinking 中，现在不是了，关闭 thinking 块
+	            if (newState.inThinking) {
+	                events.push({
+	                    type: 'content_block_stop',
                     index: 0
                 });
                 newState.inThinking = false;
