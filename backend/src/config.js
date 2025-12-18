@@ -41,6 +41,8 @@ function parseBoolean(value, defaultValue) {
 // 可用模型列表
 export const AVAILABLE_MODELS = [
     { id: 'gemini-3-flash', displayName: 'Gemini 3 Flash', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65536 },
+    // 兼容：通过模型名显式启用 thinking（映射到 gemini-3-flash）
+    { id: 'gemini-3-flash-thinking', displayName: 'Gemini 3 Flash (Thinking)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65536 },
     { id: 'gemini-3-pro-high', displayName: 'Gemini 3 Pro (High)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
     { id: 'gemini-3-pro-low', displayName: 'Gemini 3 Pro (Low)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
     { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
@@ -64,6 +66,7 @@ export const MODEL_MAPPING = {
     // Claude Haiku 不存在，映射到 Opus
     'claude-haiku-4-5-20251001': 'claude-opus-4-5-thinking',
     'gemini-2.5-flash-thinking': 'gemini-2.5-flash',
+    'gemini-3-flash-thinking': 'gemini-3-flash',
     // 兼容旧版模型名称
     'gemini-2.0-flash': 'gemini-2.5-flash',
     'gemini-2.0-flash-thinking': 'gemini-2.5-flash',
@@ -78,6 +81,7 @@ export const MODEL_MAPPING = {
 export const THINKING_MODELS = [
     'gemini-2.5-pro',
     'gemini-2.5-flash-thinking',
+    'gemini-3-flash-thinking',
     'gemini-3-pro-high',
     'gemini-3-pro-low',
     'claude-opus-4-5-thinking',
