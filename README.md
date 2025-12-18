@@ -91,6 +91,7 @@ curl http://localhost:8088/v1/chat/completions \
 ### OpenAI：工具调用
 
 说明：代理只透传 `tools/tool_calls`，不会替你执行工具；工具需要客户端自己执行后再用 `role: "tool"` 回传。
+补充：Gemini 在工具调用链路里会要求回放上游返回的 `thoughtSignature`（否则下一轮可能报 “missing thought_signature”）。本代理会自动缓存并补回，不需要客户端额外处理。
 
 1) 第一次请求：带 `tools`
 
