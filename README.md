@@ -1,6 +1,6 @@
 # Antigravity Proxy
 
-把 Antigravity（`daily-cloudcode-pa.sandbox.googleapis.com`）封装成 **OpenAI / Anthropic 兼容 API** 的反代网关：账号池 + Web 管理面板 + 多模型路由 + 流式/多模态/工具调用，并对 **Claude extended thinking 的签名回放**做了兼容（解决 Claude Code 多轮工具后 thinking 被强制降级等问题）。
+把 Antigravity（`daily-cloudcode-pa.sandbox.googleapis.com`）封装成 **OpenAI / Anthropic 兼容 API** 的反代网关：账号池 + Web 管理面板 + 多模型路由 + 流式/多模态/工具调用，并对claude code做了兼容
 
 ## 功能概览
 
