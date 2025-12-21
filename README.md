@@ -203,6 +203,25 @@ curl "http://localhost:8088/v1/messages" \
 curl "http://localhost:8088/v1/models" -H "Authorization: Bearer sk-your-api-key"
 ```
 
+## Gemini 原生端点（v1beta，主要用于 Image 生成）
+
+本项目额外提供了一个 **Gemini 原生**兼容端点（最小实现），用于 `gemini-3-pro-image` 等场景透传 `generationConfig.imageConfig`。
+
+### Image 生成（`gemini-3-pro-image`）
+
+```bash
+curl "http://localhost:8088/v1beta/models/gemini-3-pro-image:generateContent" \
+  -H "Content-Type: application/json" \
+  -H "x-goog-api-key: sk-your-api-key" \
+  -d '{
+    "contents":[{"role":"user","parts":[{"text":"生成一张 1:1 的猫咪照片风格图片"}]}],
+    "generationConfig":{
+      "candidateCount": 1,
+      "imageConfig": { "aspectRatio": "1:1", "imageSize": "4K" }
+    }
+  }'
+```
+
 ## 多模态（图片输入）
 
 - OpenAI：`messages[].content` 支持 `[{ "type":"text" }, { "type":"image_url" }]`；`image_url.url` 可用 `data:<mime>;base64,...` 或纯 base64（默认按 png）。

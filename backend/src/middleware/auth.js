@@ -11,12 +11,20 @@ import { verifyToken } from '../routes/auth.js';
 export async function verifyApiKey(request, reply) {
     const authHeader = request.headers.authorization;
     const xApiKey = request.headers['x-api-key'];
+    const anthropicApiKey = request.headers['anthropic-api-key'];
+    const xGoogApiKey = request.headers['x-goog-api-key'];
 
     let apiKey = null;
 
     // 优先使用 x-api-key header (Anthropic 格式)
     if (xApiKey) {
         apiKey = xApiKey;
+    }
+    // 兼容更多客户端：anthropic-api-key / x-goog-api-key
+    else if (anthropicApiKey) {
+        apiKey = anthropicApiKey;
+    } else if (xGoogApiKey) {
+        apiKey = xGoogApiKey;
     }
     // 其次使用 Authorization: Bearer header (OpenAI 格式)
     else if (authHeader) {
@@ -35,7 +43,7 @@ export async function verifyApiKey(request, reply) {
     else {
         return reply.code(401).send({
             error: {
-                message: 'Missing Authorization header or x-api-key',
+                message: 'Missing Authorization header or API key header',
                 type: 'invalid_request_error',
                 code: 'missing_api_key'
             }

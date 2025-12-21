@@ -11,6 +11,7 @@ import { startTokenRefreshScheduler, startQuotaSyncScheduler } from './services/
 
 import openaiRoutes from './routes/openai.js';
 import anthropicRoutes from './routes/anthropic.js';
+import geminiRoutes from './routes/gemini.js';
 import adminRoutes from './routes/admin.js';
 import oauthRoutes from './routes/oauth.js';
 import authRoutes from './routes/auth.js';
@@ -37,7 +38,7 @@ const fastify = Fastify({
 await fastify.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'anthropic-api-key', 'x-goog-api-key', 'anthropic-version'],
     credentials: true
 });
 
@@ -72,6 +73,7 @@ if (hasFrontendDist) {
 // 注册路由
 await fastify.register(openaiRoutes);
 await fastify.register(anthropicRoutes);
+await fastify.register(geminiRoutes);
 await fastify.register(adminRoutes);
 await fastify.register(oauthRoutes);
 await fastify.register(authRoutes);
