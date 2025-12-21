@@ -10,9 +10,6 @@
 - **稳定性增强**：按模型/按账号并发限制 + 上游容量错误退避/切号重试（减少 `Resource has been exhausted`）
 - **Claude thinking + tools 兼容**：
   - 自动缓存/回放 `thinking.signature`（Anthropic 端点：落库持久化；OpenAI 端点：代理内缓存回放）
-  - 修复 Claude Code 在 streaming 场景下“空文本占位 chunk 导致 thinking_delta 被吞”的问题
-- **Claude Code 原生 Web Search 兼容**：代理侧模拟 `web_search_*` 服务器工具（并提供空结果兜底补全）
-
 ## 快速开始
 
 ### 方式 A：Docker（部署推荐）
@@ -46,10 +43,6 @@ docker compose up -d --build
 cp .env.example .env   # 可选
 npm start
 ```
-
-说明：
-- `npm start` 会自动安装 workspaces 依赖、构建前端后启动后端（可用 `AGP_SKIP_INSTALL/AGP_SKIP_BUILD/AGP_FORCE_BUILD` 控制）。
-- 未指定 `DB_PATH` 时，`npm start` 默认使用 `../data/database.sqlite`（与 Docker 的 `./data` 目录保持一致）。
 
 ## 管理面板：添加账号 & 创建 API Key
 
