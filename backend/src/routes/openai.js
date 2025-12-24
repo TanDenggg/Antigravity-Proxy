@@ -23,6 +23,14 @@ export default async function openaiRoutes(fastify) {
         const startTime = Date.now();
         const openaiRequest = request.body;
         const { stream = false, model } = openaiRequest;
+        const includeUsageInStream = !!(
+            stream &&
+            openaiRequest &&
+            typeof openaiRequest === 'object' &&
+            openaiRequest.stream_options &&
+            typeof openaiRequest.stream_options === 'object' &&
+            openaiRequest.stream_options.include_usage === true
+        );
 
         let account = null;
         let usage = null;
@@ -141,6 +149,24 @@ export default async function openaiRoutes(fastify) {
                     errorResponseForLog = errorChunk;
                     streamChunksForLog.push(errorChunk);
                     reply.raw.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+                }
+
+                // OpenAI streaming: optionally include usage as the final chunk (stream_options.include_usage)
+                if (includeUsageInStream) {
+                    const usageChunk = {
+                        id: `chatcmpl-${requestId}`,
+                        object: 'chat.completion.chunk',
+                        created: Math.floor(Date.now() / 1000),
+                        model,
+                        choices: [],
+                        usage: {
+                            prompt_tokens: lastUsage?.promptTokens || 0,
+                            completion_tokens: lastUsage?.completionTokens || 0,
+                            total_tokens: lastUsage?.totalTokens || 0
+                        }
+                    };
+                    streamChunksForLog.push(usageChunk);
+                    reply.raw.write(`data: ${JSON.stringify(usageChunk)}\n\n`);
                 }
 
                 // 发送结束标志

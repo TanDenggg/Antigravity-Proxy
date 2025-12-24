@@ -347,26 +347,6 @@ export default async function anthropicRoutes(fastify) {
                 // 设置 SSE 响应头 (Anthropic 格式)
                     reply.raw.writeHead(200, SSE_HEADERS_ANTHROPIC);
 
-                // 发送 message_start 事件
-                const messageStart = {
-                    type: 'message_start',
-                    message: {
-                        id: `msg_${requestId}`,
-                        type: 'message',
-                        role: 'assistant',
-                        model,
-                        content: [],
-                        stop_reason: null,
-                        stop_sequence: null,
-                        usage: {
-                            input_tokens: 0,
-                            output_tokens: 0
-                        }
-                    }
-                };
-                streamEventsForLog.push({ event: 'message_start', data: messageStart });
-                reply.raw.write(`event: message_start\ndata: ${JSON.stringify(messageStart)}\n\n`);
-
                 const abortController = createAbortController(request);
 
                 const thinkingEnabledForStream = anthropicRequest.thinking?.type === 'enabled' ||

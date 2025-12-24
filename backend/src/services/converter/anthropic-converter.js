@@ -666,6 +666,9 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
 
 	        const events = [];
 	        let newState = { ...state };
+            if (!('messageStarted' in newState)) newState.messageStarted = false;
+            if (!('messageId' in newState)) newState.messageId = `msg_${requestId}`;
+            if (!('lastUsage' in newState)) newState.lastUsage = null;
             if (!('thinkingEnabled' in newState)) newState.thinkingEnabled = null;
             if (!('userKey' in newState)) newState.userKey = null;
 	        if (!('lastThinkingSignature' in newState)) newState.lastThinkingSignature = null;
@@ -680,6 +683,33 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
                 newState.thinkingEnabled === null || newState.thinkingEnabled === undefined
                     ? isThinkingModel(model)
                     : !!newState.thinkingEnabled;
+
+            // Track latest usage so we can emit stable token counts even if usageMetadata appears late in the stream.
+            if (usage && typeof usage === 'object') {
+                newState.lastUsage = {
+                    input_tokens: usage.promptTokenCount || 0,
+                    output_tokens: usage.candidatesTokenCount || 0
+                };
+            }
+
+            // Anthropic SSE always starts with message_start (many clients rely on it for token accounting).
+            if (!newState.messageStarted) {
+                const inputTokens = newState.lastUsage?.input_tokens || usage?.promptTokenCount || 0;
+                events.push({
+                    type: 'message_start',
+                    message: {
+                        id: newState.messageId,
+                        type: 'message',
+                        role: 'assistant',
+                        model,
+                        content: [],
+                        stop_reason: null,
+                        stop_sequence: null,
+                        usage: { input_tokens: inputTokens, output_tokens: 0 }
+                    }
+                });
+                newState.messageStarted = true;
+            }
 
 	        // 先分离 thinking 和非 thinking 的 parts
 	        const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
@@ -912,7 +942,8 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
                     stop_sequence: null
                 },
                 usage: {
-                    output_tokens: usage?.candidatesTokenCount || 0
+                    input_tokens: newState.lastUsage?.input_tokens || usage?.promptTokenCount || 0,
+                    output_tokens: newState.lastUsage?.output_tokens || usage?.candidatesTokenCount || 0
                 }
             });
 
