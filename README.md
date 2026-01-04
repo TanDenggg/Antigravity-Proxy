@@ -76,7 +76,7 @@ curl http://localhost:8088/v1/messages \
   -d '{"model":"claude-opus-4-5","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-### Gemini 原生格式
+### Gemini 格式
 
 ```bash
 curl http://localhost:8088/v1beta/models/gemini-2.5-flash:generateContent \
