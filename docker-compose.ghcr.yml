@@ -26,7 +26,7 @@ services:
 
       # ============ 并发与重试配置 ============
       # 禁用本地并发限制（1=禁用，0=启用）
-      - DISABLE_LOCAL_LIMITS=1
+      - DISABLE_LOCAL_LIMITS=${DISABLE_LOCAL_LIMITS:-1}
       # 每个模型的最大并发请求数
       - MAX_CONCURRENT_PER_MODEL=5
       # 每个账号的最大并发请求数
