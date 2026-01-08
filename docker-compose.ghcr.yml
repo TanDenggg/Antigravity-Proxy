@@ -9,21 +9,51 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
+    ports:
+      # 宿主机端口:容器端口（修改冒号前的数字来更改访问端口）
+      - "8088:3000"
     environment:
       - NODE_ENV=production
-      - DB_PATH=/app/data/database.sqlite
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-      - API_KEY=${API_KEY:-}
-      # 上游容量/限流相关
-      - MAX_CONCURRENT_PER_MODEL=${MAX_CONCURRENT_PER_MODEL:-5}
-      - MAX_CONCURRENT_PER_ACCOUNT=${MAX_CONCURRENT_PER_ACCOUNT:-1}
-      - UPSTREAM_CAPACITY_RETRIES=${UPSTREAM_CAPACITY_RETRIES:-2}
-      - RETRY_TOTAL_TIMEOUT_MS=${RETRY_TOTAL_TIMEOUT_MS:-30000}
-      # 容器内必须监听 0.0.0.0
       - HOST=0.0.0.0
       - PORT=3000
-    ports:
-      - "${PORT:-8088}:3000"
+      - DB_PATH=/app/data/database.sqlite
+
+      # ============ 基础配置（必填） ============
+      # API 访问密钥（客户端调用 API 时需要提供）
+      - API_KEY=your_api_key_here
+      # 管理面板密码
+      - ADMIN_PASSWORD=admin123
+
+      # ============ 并发与重试配置 ============
+      # 禁用本地并发限制（1=禁用，0=启用）
+      - DISABLE_LOCAL_LIMITS=1
+      # 每个模型的最大并发请求数
+      - MAX_CONCURRENT_PER_MODEL=5
+      # 每个账号的最大并发请求数
+      - MAX_CONCURRENT_PER_ACCOUNT=1
+      # 上游容量错误重试次数
+      - UPSTREAM_CAPACITY_RETRIES=2
+      # 上游容量错误重试延迟（毫秒）
+      - UPSTREAM_CAPACITY_RETRY_DELAY_MS=1000
+      # 重试总超时时间（毫秒）
+      - RETRY_TOTAL_TIMEOUT_MS=30000
+      # 容量冷却默认时间（毫秒）
+      - CAPACITY_COOLDOWN_DEFAULT_MS=15000
+      # 容量冷却最大时间（毫秒）
+      - CAPACITY_COOLDOWN_MAX_MS=120000
+
+      # ============ 工具调用配置 ============
+      # tool_result 单条最大字符数（0=不限制）
+      - TOOL_RESULT_MAX_CHARS=0
+      # tool_result 总计最大字符数（0=不限制）
+      - TOOL_RESULT_TOTAL_MAX_CHARS=0
+      # 工具调用时的最大输出 tokens（0=不限制）
+      - MAX_OUTPUT_TOKENS_WITH_TOOLS=0
+
+      # ============ 其他配置 ============
+      # 仪表盘「今日」统计时区偏移（分钟），中国时间为 480
+      - DASHBOARD_TZ_OFFSET_MINUTES=480
+
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
       interval: 30s

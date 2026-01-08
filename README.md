@@ -34,7 +34,10 @@
 # 1. 下载配置文件
 curl -O https://raw.githubusercontent.com/Kazuki-0147/Antigravity-Proxy/main/docker-compose.ghcr.yml
 
-# 2. 启动
+# 2. 编辑配置文件，修改 API_KEY 和 ADMIN_PASSWORD
+nano docker-compose.ghcr.yml  # 或使用其他编辑器
+
+# 3. 启动
 docker-compose -f docker-compose.ghcr.yml up -d
 ```
 
@@ -105,15 +108,40 @@ curl http://localhost:8088/v1beta/models/gemini-2.5-flash:generateContent \
 
 ## 环境变量
 
+### 基础配置
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | 8088 | 服务端口 |
-| `ADMIN_PASSWORD` | - | 管理面板密码 |
-| `API_KEY` | - | API 访问密钥（留空则使用 ADMIN_PASSWORD） |
-| `MAX_CONCURRENT_PER_MODEL` | 0 | 单模型并发上限（0=不限制） |
-| `MAX_CONCURRENT_PER_ACCOUNT` | 0 | 单账号并发上限（0=不限制） |
+| `ADMIN_PASSWORD` | admin123 | 管理面板密码 |
+| `API_KEY` | - | API 访问密钥（客户端调用时需要提供） |
+
+### 并发与重试配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DISABLE_LOCAL_LIMITS` | 1 | 禁用本地并发限制（1=禁用，0=启用） |
+| `MAX_CONCURRENT_PER_MODEL` | 5 | 单模型并发上限 |
+| `MAX_CONCURRENT_PER_ACCOUNT` | 1 | 单账号并发上限 |
+| `UPSTREAM_CAPACITY_RETRIES` | 2 | 上游容量错误重试次数 |
+| `UPSTREAM_CAPACITY_RETRY_DELAY_MS` | 1000 | 上游容量错误重试延迟（毫秒） |
+| `RETRY_TOTAL_TIMEOUT_MS` | 30000 | 重试总超时时间（毫秒） |
 | `SAME_ACCOUNT_RETRIES` | 2 | 同号重试次数 |
 | `ERROR_COUNT_TO_DISABLE` | 3 | 连续失败多少次才禁用账号 |
+
+### 工具调用配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `TOOL_RESULT_MAX_CHARS` | 0 | tool_result 单条最大字符数（0=不限制） |
+| `TOOL_RESULT_TOTAL_MAX_CHARS` | 0 | tool_result 总计最大字符数（0=不限制） |
+| `MAX_OUTPUT_TOKENS_WITH_TOOLS` | 0 | 工具调用时的最大输出 tokens（0=不限制） |
+
+### 其他配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DASHBOARD_TZ_OFFSET_MINUTES` | 480 | 仪表盘时区偏移（分钟），中国时间为 480 |
 | `OUTBOUND_PROXY` | - | 出站代理（如 `http://127.0.0.1:7890`） |
 
 完整环境变量说明见 `.env.example`。
