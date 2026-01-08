@@ -104,6 +104,22 @@ export default async function anthropicRoutes(fastify) {
                             return streamChat(a, req, onData, onError, signal);
                         },
                         onData: (data) => {
+                            if (process.env.DEBUG_THINKING_FLOW) {
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    const parts = parsed?.response?.candidates?.[0]?.content?.parts || [];
+                                    console.log(JSON.stringify({
+                                        kind: 'thinking_flow_debug',
+                                        requestId,
+                                        thoughtPartsCount: parts.filter(p => p.thought).length,
+                                        functionCallCount: parts.filter(p => p.functionCall).length,
+                                        textPartsCount: parts.filter(p => p.text !== undefined && !p.thought).length,
+                                        hasSignature: parts.some(p => p.thoughtSignature || p.thought_signature || p.signature),
+                                        finishReason: parsed?.response?.candidates?.[0]?.finishReason
+                                    }));
+                                } catch { /* ignore parse errors */ }
+                            }
+
                             const { events, state } = convertAntigravityToAnthropicSSE(
                                 data, requestId, model, sseState
                             );

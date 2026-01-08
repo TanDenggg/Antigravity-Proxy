@@ -1,9 +1,11 @@
 function extractThoughtSignature(value) {
     if (!value) return null;
     if (typeof value !== 'object') return null;
-    const sig = value.thoughtSignature || value.thought_signature;
+    // 扩展: 支持 signature 字段 (Anthropic/Vertex 标准)
+    const sig = value.thoughtSignature || value.thought_signature || value.signature;
     if (!sig) return null;
-    return String(sig);
+    if (typeof sig !== 'string') return null;
+    return sig;
 }
 
 export function extractThoughtSignatureFromPart(part) {

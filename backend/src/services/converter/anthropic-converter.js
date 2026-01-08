@@ -804,12 +804,18 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
                     index: 0,
                     content_block: { type: 'thinking', thinking: '', ...(sig ? { signature: sig } : {}) }
                 });
-                events.push({ type: 'content_block_stop', index: 0 });
 
                 newState.hasThinking = true;
                 newState.thinkingIndex = 0;
-                newState.thinkingStopped = true;
+                newState.inThinking = true;
                 newState.nextIndex = 1;
+            };
+
+            const closeThinkingBlockIfNeeded = () => {
+                if (!newState.inThinking) return;
+                events.push({ type: 'content_block_stop', index: 0 });
+                newState.inThinking = false;
+                newState.thinkingStopped = true;
             };
 
 	        // 先处理 thinking（确保 thinking 在前，index 0）
@@ -826,7 +832,16 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
 	                    newState.pendingToolUseIds = [];
 	                }
 	            }
-                if (newState.thinkingStopped) continue;
+                if (newState.thinkingStopped) {
+                    if (process.env.DEBUG_THINKING_FLOW && thinkingParts.length > 0) {
+                        console.warn(JSON.stringify({
+                            kind: 'thinking_skipped',
+                            reason: 'thinkingStopped flag was set',
+                            skippedCount: thinkingParts.length
+                        }));
+                    }
+                    continue;
+                }
 	            if (!newState.inThinking) {
 	                // thinking 始终是 index 0
 	                newState.thinkingIndex = 0;
@@ -873,25 +888,17 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
 	                }
 	            }
 
-	            // 如果之前在 thinking 中，现在不是了，关闭 thinking 块
-	            if (newState.inThinking) {
-	                events.push({
-	                    type: 'content_block_stop',
-                    index: 0
-                });
-                newState.inThinking = false;
-                newState.thinkingStopped = true;
-            }
-
             // thinking 启用时，确保响应的第一个块是 thinking/redacted_thinking（Claude Code/上游校验需要）
-            // 注意：上游可能会先发一个“空 text”占位 chunk（text: ""），随后才开始下发 thought parts。
+            // 注意：上游可能会先发一个"空 text"占位 chunk（text: ""），随后才开始下发 thought parts。
             // 这种情况下不能提前插入占位 thinking，否则会把后续真实 thinking_delta 全部吃掉。
             const willEmitNonThinkingContent =
                 (part.text !== undefined && part.text !== '') ||
                 !!part.functionCall ||
                 !!part.inlineData;
             if (thinkingEnabledForResponse && willEmitNonThinkingContent) {
+                closeThinkingBlockIfNeeded();
                 ensureLeadingThinkingBlock();
+                closeThinkingBlockIfNeeded();
             }
 
             // 处理文本（跳过空文本）
