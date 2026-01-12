@@ -155,6 +155,7 @@ export function deleteAccount(id) {
     const db = getDatabase();
     // 先将关联的日志记录的 account_id 设为 NULL
     db.prepare('UPDATE request_logs SET account_id = NULL WHERE account_id = ?').run(id);
+    db.prepare('UPDATE request_attempt_logs SET account_id = NULL WHERE account_id = ?').run(id);
     // 然后删除账号
     db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
 }
@@ -180,6 +181,111 @@ export function createRequestLog(data) {
         data.errorMessage || null,
         Date.now()
     );
+}
+
+export function createRequestAttemptLog(data) {
+    const stmt = getDatabase().prepare(`
+        INSERT INTO request_attempt_logs (
+            request_id, account_id, api_key_id, model,
+            attempt_no, account_attempt, same_retry,
+            status, latency_ms, error_message,
+            started_at, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+        data.requestId || null,
+        data.accountId,
+        data.apiKeyId,
+        data.model,
+        data.attemptNo || 0,
+        data.accountAttempt ?? null,
+        data.sameRetry ?? null,
+        data.status,
+        data.latencyMs || 0,
+        data.errorMessage || null,
+        data.startedAt ?? null,
+        data.createdAt || Date.now()
+    );
+}
+
+export function getRequestAttemptLogs(limit = 100, offset = 0, filters = {}) {
+    let sql = `
+        SELECT l.*, a.email as account_email, k.name as api_key_name
+        FROM request_attempt_logs l
+        LEFT JOIN accounts a ON l.account_id = a.id
+        LEFT JOIN api_keys k ON l.api_key_id = k.id
+        WHERE 1=1
+    `;
+    const params = [];
+
+    if (filters.requestId) {
+        sql += ' AND l.request_id = ?';
+        params.push(filters.requestId);
+    }
+    if (filters.model) {
+        sql += ' AND l.model = ?';
+        params.push(filters.model);
+    }
+    if (filters.accountId) {
+        sql += ' AND l.account_id = ?';
+        params.push(filters.accountId);
+    }
+    if (filters.status) {
+        sql += ' AND l.status = ?';
+        params.push(filters.status);
+    }
+    if (filters.startTime) {
+        sql += ' AND l.created_at >= ?';
+        params.push(filters.startTime);
+    }
+    if (filters.endTime) {
+        sql += ' AND l.created_at <= ?';
+        params.push(filters.endTime);
+    }
+
+    sql += ' ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    return getDatabase().prepare(sql).all(...params);
+}
+
+export function getRequestAttemptLogsTotal(filters = {}) {
+    let sql = `
+        SELECT COUNT(*) as total
+        FROM request_attempt_logs l
+        WHERE 1=1
+    `;
+    const params = [];
+
+    if (filters.requestId) {
+        sql += ' AND l.request_id = ?';
+        params.push(filters.requestId);
+    }
+    if (filters.model) {
+        sql += ' AND l.model = ?';
+        params.push(filters.model);
+    }
+    if (filters.accountId) {
+        sql += ' AND l.account_id = ?';
+        params.push(filters.accountId);
+    }
+    if (filters.status) {
+        sql += ' AND l.status = ?';
+        params.push(filters.status);
+    }
+    if (filters.startTime) {
+        sql += ' AND l.created_at >= ?';
+        params.push(filters.startTime);
+    }
+    if (filters.endTime) {
+        sql += ' AND l.created_at <= ?';
+        params.push(filters.endTime);
+    }
+
+    const row = getDatabase().prepare(sql).get(...params);
+    return row?.total || 0;
 }
 
 export function getRequestLogs(limit = 100, offset = 0, filters = {}) {

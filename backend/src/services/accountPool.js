@@ -24,7 +24,7 @@ const CAPACITY_COOLDOWN_MAX_MS = Number(process.env.CAPACITY_COOLDOWN_MAX_MS || 
  */
 class AccountPool {
     constructor() {
-        this.lastAccountIndex = -1;
+        this.lastUsedAccountId = 0; // 全局跟踪上次使用的账号 ID（跨模型共享）
         this.accountLocks = new Map(); // 账号锁，防止并发问题（值为当前并发计数）
         this.capacityCooldowns = new Map(); // 账号在某个模型上的冷却期 key: `${accountId}:${model}` -> timestamp
         this.capacityErrorCounts = new Map(); // 连续容量错误计数 key: `${accountId}:${model}` -> count
@@ -110,9 +110,10 @@ class AccountPool {
     }
 
     /**
-     * 轮询获取账号（简单轮询，不考虑配额）
+     * 轮询获取账号（全局严格轮询，跨模型共享索引）
+     * 使用账号 ID 而非数组索引跟踪，避免不同模型账号池大小不同导致的错位
      */
-    async getNextAccount(model = null) {
+    async getNextAccount(model = null, options = null) {
         const mappedModel = model ? getMappedModel(model) : null;
         const accounts = getActiveAccounts(mappedModel);
 
@@ -120,22 +121,65 @@ class AccountPool {
             throw new Error('No active accounts available');
         }
 
+        const excludeIds = new Set();
+        if (options && typeof options === 'object') {
+            const raw = options.excludeAccountIds;
+            if (Array.isArray(raw)) {
+                for (const v of raw) {
+                    const n = Number(v);
+                    if (Number.isFinite(n) && n > 0) {
+                        excludeIds.add(n);
+                    }
+                }
+            }
+        }
+
         let earliestCooldownUntil = null;
         let cooldownCount = 0;
 
-        // 严格轮询：稳定顺序（按 id），依次选择下一个可用账号
+        // 严格轮询：按 ID 排序，保证稳定顺序
         const ordered = [...accounts].sort((a, b) => (a.id || 0) - (b.id || 0));
         const total = ordered.length;
-        let idx = (this.lastAccountIndex + 1) % total;
 
-        for (let i = 0; i < total; i++) {
-            const account = ordered[idx];
+        // 注意：必须“按最终尝试的账号”推进 lastUsedAccountId。
+        // 否则当某个账号因 token/cooldown/并发等原因被跳过时，
+        // lastUsedAccountId 仍停留在被跳过的账号上，下一次请求会再次命中同一个“下一个可用账号”，
+        // 从而出现“连续两次使用同一账号”的现象。
+        //
+        // 这里采用“逐个预占位（reservation）”的方式：
+        // 每次尝试一个账号前，立即把 lastUsedAccountId 推进到该账号（无 await），
+        // 保证并发下不会因异步完成顺序导致指针回退，同时也能在跳过账号时继续向前推进。
+        const tried = new Set();
+
+        for (let attempt = 0; attempt < total; attempt++) {
+            const prevId = this.lastUsedAccountId;
+            let startIdx = ordered.findIndex(a => a.id > prevId);
+            if (startIdx === -1) startIdx = 0;
+
+            let account = null;
+            for (let offset = 0; offset < total; offset++) {
+                const idx = (startIdx + offset) % total;
+                const candidate = ordered[idx];
+                const candidateId = candidate?.id;
+                if (!candidateId || tried.has(candidateId)) continue;
+                if (excludeIds.has(candidateId)) continue;
+                account = candidate;
+                break;
+            }
+
+            if (!account) break;
+
+            const candidateId = account.id;
+            tried.add(candidateId);
+
+            // 乐观更新：立即推进 lastUsedAccountId（无 await），避免并发竞争与“跳号导致重复命中”
+            this.lastUsedAccountId = candidateId;
+            console.log(`[POLL] ts=${Date.now()} prev=${prevId} next=${candidateId} model=${mappedModel}`);
 
             // 检查账号并发是否已满
             if (!DISABLE_LOCAL_LIMITS && Number.isFinite(MAX_CONCURRENT_PER_ACCOUNT) && MAX_CONCURRENT_PER_ACCOUNT > 0) {
                 const lockCount = this.accountLocks.get(account.id) || 0;
                 if (lockCount >= MAX_CONCURRENT_PER_ACCOUNT) {
-                    idx = (idx + 1) % total;
                     continue;
                 }
             }
@@ -147,7 +191,6 @@ class AccountPool {
                 if (until && (!earliestCooldownUntil || until < earliestCooldownUntil)) {
                     earliestCooldownUntil = until;
                 }
-                idx = (idx + 1) % total;
                 continue;
             }
 
@@ -160,13 +203,10 @@ class AccountPool {
                 // 更新最后使用时间
                 updateAccountLastUsed(account.id);
 
-                this.lastAccountIndex = idx;
                 return validAccount;
             } catch {
                 // 继续尝试下一个账号
             }
-
-            idx = (idx + 1) % total;
         }
 
         // 所有账号都在冷却期：返回 429 + reset after，便于客户端等待后重试

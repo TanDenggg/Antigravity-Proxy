@@ -304,7 +304,22 @@ class ApiService {
     }
     const url = query.toString() ? `/admin/logs?${query}` : '/admin/logs';
     return this.request(url, {
-      dedupKey: 'logs'
+      dedupKey: 'logs',
+      abortPrevious: true
+    });
+  }
+
+  async getAttemptLogs(params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        query.set(key, String(value));
+      }
+    }
+    const url = query.toString() ? `/admin/logs/attempts?${query}` : '/admin/logs/attempts';
+    return this.request(url, {
+      dedupKey: 'logs',
+      abortPrevious: true
     });
   }
 

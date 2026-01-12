@@ -3,6 +3,7 @@ import {
     getAllAccounts, getAccountById, createAccount, updateAccountStatus, deleteAccount,
     getAllAccountsForRefresh,
     getRequestLogs, getRequestLogsTotal, getRequestStats, getModelUsageStats,
+    getRequestAttemptLogs, getRequestAttemptLogsTotal,
     getSetting, setSetting
 } from '../db/index.js';
 import { initializeAccount, refreshAccessToken, fetchProjectId, fetchQuotaInfo, fetchDetailedQuotaInfo } from '../services/tokenManager.js';
@@ -243,6 +244,24 @@ export default async function adminRoutes(fastify) {
         };
         const logs = getRequestLogs(parseInt(limit), parseInt(offset), filters);
         const total = getRequestLogsTotal(filters);
+
+        return { logs, total };
+    });
+
+    // GET /admin/logs/attempts - attempt-level logs (one upstream call per row)
+    fastify.get('/admin/logs/attempts', async (request) => {
+        const { limit = 100, offset = 0, model, account_id, status, request_id, start_time, end_time } = request.query;
+
+        const filters = {
+            requestId: request_id || null,
+            model,
+            accountId: account_id ? parseInt(account_id) : null,
+            status,
+            startTime: start_time ? parseInt(start_time) : null,
+            endTime: end_time ? parseInt(end_time) : null
+        };
+        const logs = getRequestAttemptLogs(parseInt(limit), parseInt(offset), filters);
+        const total = getRequestAttemptLogsTotal(filters);
 
         return { logs, total };
     });

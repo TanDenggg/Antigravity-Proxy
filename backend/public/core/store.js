@@ -227,7 +227,8 @@ export const store = new Store({
     error: null,
     filters: {
       model: '',
-      status: ''
+      status: '',
+      requestId: ''
     },
     pagination: {
       page: 1,

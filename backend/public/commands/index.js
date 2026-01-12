@@ -251,11 +251,16 @@ commands.register('logs:load', async () => {
     const { page, pageSize } = store.get('logs.pagination');
     const filters = store.get('logs.filters');
     
-    const result = await api.getLogs({
+    const commonParams = {
       limit: pageSize,
       offset: (page - 1) * pageSize,
       model: filters.model || undefined,
       status: filters.status || undefined
+    };
+
+    const result = await api.getAttemptLogs({
+      ...commonParams,
+      request_id: filters.requestId || undefined
     });
     
     store.set('logs.list', result?.logs || []);
@@ -272,10 +277,11 @@ commands.register('logs:load', async () => {
   }
 });
 
-commands.register('logs:set-filter', async ({ model, status }) => {
+commands.register('logs:set-filter', async ({ model, status, requestId }) => {
   store.batch(() => {
     if (model !== undefined) store.set('logs.filters.model', model);
     if (status !== undefined) store.set('logs.filters.status', status);
+    if (requestId !== undefined) store.set('logs.filters.requestId', requestId);
     store.set('logs.pagination.page', 1);
   });
   

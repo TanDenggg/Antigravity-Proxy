@@ -2,7 +2,30 @@ import { isCapacityError, isNonRetryableError, isAuthenticationError, isRefreshT
 import { withCapacityRetry, withFullRetry } from './retry-handler.js';
 import { RETRY_CONFIG } from '../config.js';
 import { forceRefreshToken } from '../services/tokenManager.js';
-import { updateAccountStatus } from '../db/index.js';
+import { createRequestAttemptLog, updateAccountStatus } from '../db/index.js';
+
+function getLastUsedAccountId(accountPool) {
+    const n = Number(accountPool?.lastUsedAccountId);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+}
+
+function createRequestScopedAccountGetter({ accountPool, model, availableCount = null }) {
+    const excludedAccountIds = new Set();
+
+    // Strict global round-robin requirement:
+    // do NOT allow a request to "wrap around" and try the account used immediately before it started.
+    const prev = getLastUsedAccountId(accountPool);
+    if (prev && Number(availableCount || 0) > 1) excludedAccountIds.add(prev);
+
+    return async () => {
+        const account = await accountPool.getNextAccount(model, {
+            excludeAccountIds: Array.from(excludedAccountIds)
+        });
+        if (account?.id) excludedAccountIds.add(account.id);
+        return account;
+    };
+}
 
 export function createAbortController(request) {
     const abortController = new AbortController();
@@ -15,6 +38,14 @@ function attachAccountToError(error, account) {
     if (!account) return;
     if (!Object.prototype.hasOwnProperty.call(error, 'account')) {
         Object.defineProperty(error, 'account', { value: account, enumerable: false });
+    }
+}
+
+function safeCreateAttemptLog(data) {
+    try {
+        createRequestAttemptLog(data);
+    } catch {
+        // ignore logging failures
     }
 }
 
@@ -51,23 +82,64 @@ export async function runChatWithCapacityRetry({
     buildRequest,
     execute
 }) {
-    const configuredRetries = Math.max(0, Number(maxRetries || 0));
     const availableCount = typeof accountPool?.getAvailableAccountCount === 'function'
         ? accountPool.getAvailableAccountCount(model)
         : 0;
-    // 至少轮询完一遍账号池（遇到 capacity 时再放弃）
-    const effectiveMaxRetries = Math.max(configuredRetries, Math.max(0, availableCount - 1));
+    // 尽量轮询完一遍账号池，但避免在同一个请求里“绕一圈又回到上一次用过的账号”。
+    // withCapacityRetry 的总尝试次数 = maxRetries + 2，因此这里把 maxRetries 控制在“最多尝试 maxUniqueAccounts 次”。
+    const prevAccountId = getLastUsedAccountId(accountPool);
+    const maxUniqueAccounts = Math.max(
+        0,
+        availableCount - (prevAccountId && availableCount > 1 ? 1 : 0)
+    );
+    const maxRetriesByPool = Math.max(0, maxUniqueAccounts - 2);
+    const maxRetriesByConfig = Math.max(0, Number(maxRetries ?? RETRY_CONFIG.maxRetries ?? 0));
+    const effectiveMaxRetries = Math.min(maxRetriesByPool, maxRetriesByConfig);
+
+    const getAccount = createRequestScopedAccountGetter({ accountPool, model, availableCount });
 
     const out = await withCapacityRetry({
         maxRetries: effectiveMaxRetries,
         baseRetryDelayMs,
-        getAccount: async () => accountPool.getNextAccount(model),
-        executeRequest: async ({ account }) => {
+        getAccount,
+        executeRequest: async ({ account, attempt }) => {
             const antigravityRequest = buildRequest(account);
+            const startedAt = Date.now();
             try {
-                return await execute(account, antigravityRequest);
+                const result = await execute(account, antigravityRequest);
+                const endedAt = Date.now();
+                safeCreateAttemptLog({
+                    requestId: antigravityRequest?.requestId || null,
+                    accountId: account?.id,
+                    apiKeyId: null,
+                    model,
+                    attemptNo: attempt || 0,
+                    accountAttempt: null,
+                    sameRetry: null,
+                    status: 'success',
+                    latencyMs: Math.max(0, endedAt - startedAt),
+                    errorMessage: null,
+                    startedAt,
+                    createdAt: endedAt
+                });
+                return result;
             } catch (error) {
-                if (!isCapacityError(error)) attachAccountToError(error, account);
+                const endedAt = Date.now();
+                safeCreateAttemptLog({
+                    requestId: antigravityRequest?.requestId || null,
+                    accountId: account?.id,
+                    apiKeyId: null,
+                    model,
+                    attemptNo: attempt || 0,
+                    accountAttempt: null,
+                    sameRetry: null,
+                    status: 'error',
+                    latencyMs: Math.max(0, endedAt - startedAt),
+                    errorMessage: error?.message || String(error),
+                    startedAt,
+                    createdAt: endedAt
+                });
+                attachAccountToError(error, account);
                 throw error;
             }
         },
@@ -96,7 +168,53 @@ export async function runChatWithFullRetry({
     const availableCount = typeof accountPool?.getAvailableAccountCount === 'function'
         ? accountPool.getAvailableAccountCount(model)
         : 0;
-    const maxAccountSwitches = Math.max(RETRY_CONFIG.maxRetries, Math.max(0, availableCount - 1));
+    // Strict global round-robin: exclude the immediately previous account for this request.
+    // Allow switching through the full pool (excluding prev) when needed.
+    const maxAccountSwitches = Math.max(0, availableCount - 2);
+
+    const getAccount = createRequestScopedAccountGetter({ accountPool, model, availableCount });
+    let attemptNo = 0;
+
+    const executeAndLog = async ({ account, antigravityRequest, accountAttempt, sameRetry, executeFn }) => {
+        attemptNo += 1;
+        const startedAt = Date.now();
+        try {
+            const result = await executeFn(account, antigravityRequest);
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo,
+                accountAttempt: accountAttempt ?? null,
+                sameRetry: sameRetry ?? null,
+                status: 'success',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: null,
+                startedAt,
+                createdAt: endedAt
+            });
+            return result;
+        } catch (error) {
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo,
+                accountAttempt: accountAttempt ?? null,
+                sameRetry: sameRetry ?? null,
+                status: 'error',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: error?.message || String(error),
+                startedAt,
+                createdAt: endedAt
+            });
+            throw error;
+        }
+    };
 
     const out = await withFullRetry({
         sameAccountRetries: RETRY_CONFIG.sameAccountRetries,
@@ -104,19 +222,37 @@ export async function runChatWithFullRetry({
         maxAccountSwitches,
         accountSwitchDelayMs: RETRY_CONFIG.baseRetryDelayMs,
         totalTimeoutMs: RETRY_CONFIG.totalTimeoutMs,
-        getAccount: async () => accountPool.getNextAccount(model),
-        executeRequest: async ({ account }) => {
+        getAccount,
+        executeRequest: async ({ account, sameRetry, accountAttempt }) => {
             const antigravityRequest = buildRequest(account);
             try {
-                return await execute(account, antigravityRequest);
+                return await executeAndLog({
+                    account,
+                    antigravityRequest,
+                    accountAttempt,
+                    sameRetry,
+                    executeFn: execute
+                });
             } catch (error) {
                 if (isAuthenticationError(error)) {
-                    const authRetryResult = await handleAuthErrorWithRefresh(account, error, execute, antigravityRequest);
+                    const authRetryResult = await handleAuthErrorWithRefresh(
+                        account,
+                        error,
+                        async (acc, req) => executeAndLog({
+                            account: acc,
+                            antigravityRequest: req,
+                            accountAttempt,
+                            sameRetry,
+                            executeFn: execute
+                        }),
+                        antigravityRequest
+                    );
                     if (authRetryResult?.success) {
                         return authRetryResult.result;
                     }
                     error.authHandled = true;
                 }
+                attachAccountToError(error, account);
                 throw error;
             }
         },
@@ -160,22 +296,63 @@ export async function runStreamChatWithCapacityRetry({
     canRetry
 }) {
     let attempt = 0;
-    const configuredRetries = Math.max(0, Number(maxRetries || 0));
     const availableCount = typeof accountPool?.getAvailableAccountCount === 'function'
         ? accountPool.getAvailableAccountCount(model)
         : 0;
-    const effectiveMaxRetries = Math.max(configuredRetries, Math.max(0, availableCount - 1));
+    // total attempts is capped by (effectiveMaxRetries + 1); keep it within one pool traversal (excluding prev).
+    const prevAccountId = getLastUsedAccountId(accountPool);
+    const maxUniqueAccounts = Math.max(
+        0,
+        availableCount - (prevAccountId && availableCount > 1 ? 1 : 0)
+    );
+    // Total attempts in the loop is effectively (effectiveMaxRetries + 2), so keep it within one traversal.
+    const maxRetriesByPool = Math.max(0, maxUniqueAccounts - 2);
+    const maxRetriesByConfig = Math.max(0, Number(maxRetries ?? RETRY_CONFIG.maxRetries ?? 0));
+    const effectiveMaxRetries = Math.min(maxRetriesByPool, maxRetriesByConfig);
+
+    const getAccount = createRequestScopedAccountGetter({ accountPool, model, availableCount });
 
     while (true) {
         attempt++;
-        const account = await accountPool.getNextAccount(model);
+        const account = await getAccount();
         const antigravityRequest = buildRequest(account);
+        const startedAt = Date.now();
 
         try {
             await streamChat(account, antigravityRequest, onData, null, abortSignal);
             accountPool.markCapacityRecovered(account.id, model);
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo: attempt,
+                accountAttempt: null,
+                sameRetry: null,
+                status: 'success',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: null,
+                startedAt,
+                createdAt: endedAt
+            });
             return { account, aborted: false };
         } catch (error) {
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo: attempt,
+                accountAttempt: null,
+                sameRetry: null,
+                status: abortSignal?.aborted ? 'aborted' : 'error',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: error?.message || String(error),
+                startedAt,
+                createdAt: endedAt
+            });
             if (abortSignal?.aborted) {
                 return { account, aborted: true };
             }
@@ -196,6 +373,7 @@ export async function runStreamChatWithCapacityRetry({
                     continue;
                 }
 
+                attachAccountToError(error, account);
                 throw error;
             }
 
@@ -220,7 +398,51 @@ export async function runStreamChatWithFullRetry({
     const availableCount = typeof accountPool?.getAvailableAccountCount === 'function'
         ? accountPool.getAvailableAccountCount(model)
         : 0;
-    const maxAccountSwitches = Math.max(RETRY_CONFIG.maxRetries, Math.max(0, availableCount - 1));
+    const maxAccountSwitches = Math.max(0, availableCount - 2);
+
+    const getAccount = createRequestScopedAccountGetter({ accountPool, model, availableCount });
+    let attemptNo = 0;
+
+    const streamAndLog = async ({ account, antigravityRequest, accountAttempt, sameRetry, streamFn }) => {
+        attemptNo += 1;
+        const startedAt = Date.now();
+        try {
+            const result = await streamFn(account, antigravityRequest);
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo,
+                accountAttempt: accountAttempt ?? null,
+                sameRetry: sameRetry ?? null,
+                status: 'success',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: null,
+                startedAt,
+                createdAt: endedAt
+            });
+            return result;
+        } catch (error) {
+            const endedAt = Date.now();
+            safeCreateAttemptLog({
+                requestId: antigravityRequest?.requestId || null,
+                accountId: account?.id,
+                apiKeyId: null,
+                model,
+                attemptNo,
+                accountAttempt: accountAttempt ?? null,
+                sameRetry: sameRetry ?? null,
+                status: abortSignal?.aborted ? 'aborted' : 'error',
+                latencyMs: Math.max(0, endedAt - startedAt),
+                errorMessage: error?.message || String(error),
+                startedAt,
+                createdAt: endedAt
+            });
+            throw error;
+        }
+    };
 
     let lastAccount = null;
     let aborted = false;
@@ -232,12 +454,21 @@ export async function runStreamChatWithFullRetry({
             maxAccountSwitches,
             accountSwitchDelayMs: RETRY_CONFIG.baseRetryDelayMs,
             totalTimeoutMs: RETRY_CONFIG.totalTimeoutMs,
-            getAccount: async () => accountPool.getNextAccount(model),
-            executeRequest: async ({ account }) => {
+            getAccount,
+            executeRequest: async ({ account, sameRetry, accountAttempt }) => {
                 lastAccount = account;
                 const antigravityRequest = buildRequest(account);
                 try {
-                    await streamChat(account, antigravityRequest, onData, null, abortSignal);
+                    await streamAndLog({
+                        account,
+                        antigravityRequest,
+                        accountAttempt,
+                        sameRetry,
+                        streamFn: async (a, req) => {
+                            await streamChat(a, req, onData, null, abortSignal);
+                            return true;
+                        }
+                    });
                     return true;
                 } catch (error) {
                     if (isAuthenticationError(error)) {
@@ -245,8 +476,16 @@ export async function runStreamChatWithFullRetry({
                             account,
                             error,
                             async (acc, req) => {
-                                await streamChat(acc, req, onData, null, abortSignal);
-                                return true;
+                                return streamAndLog({
+                                    account: acc,
+                                    antigravityRequest: req,
+                                    accountAttempt,
+                                    sameRetry,
+                                    streamFn: async (a, r) => {
+                                        await streamChat(a, r, onData, null, abortSignal);
+                                        return true;
+                                    }
+                                });
                             },
                             antigravityRequest
                         );

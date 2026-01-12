@@ -45,6 +45,26 @@ CREATE TABLE IF NOT EXISTS request_logs (
     FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
 );
 
+-- 请求尝试日志表（同一次外部请求内的每次上游尝试/重试/切号）
+-- 注意：与 request_logs 不同，这里是一条上游调用就记录一条（用于排查轮询/限流问题）
+CREATE TABLE IF NOT EXISTS request_attempt_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT,
+    account_id INTEGER,
+    api_key_id INTEGER,
+    model TEXT,
+    attempt_no INTEGER,
+    account_attempt INTEGER,
+    same_retry INTEGER,
+    status TEXT,
+    latency_ms INTEGER,
+    error_message TEXT,
+    started_at INTEGER,
+    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
+);
+
 -- 系统配置表
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -80,6 +100,10 @@ CREATE INDEX IF NOT EXISTS idx_account_model_quotas_model ON account_model_quota
 CREATE INDEX IF NOT EXISTS idx_account_model_quotas_model_quota ON account_model_quotas(model, quota_remaining);
 CREATE INDEX IF NOT EXISTS idx_request_logs_created ON request_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_request_logs_account ON request_logs(account_id);
+CREATE INDEX IF NOT EXISTS idx_request_attempt_logs_created ON request_attempt_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_request_attempt_logs_request_id ON request_attempt_logs(request_id);
+CREATE INDEX IF NOT EXISTS idx_request_attempt_logs_account ON request_attempt_logs(account_id);
+CREATE INDEX IF NOT EXISTS idx_request_attempt_logs_model ON request_attempt_logs(model);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key ON api_keys(key);
 CREATE INDEX IF NOT EXISTS idx_api_keys_status ON api_keys(status);
 CREATE INDEX IF NOT EXISTS idx_signature_cache_saved_at ON signature_cache(saved_at);

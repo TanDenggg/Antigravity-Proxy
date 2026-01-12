@@ -35,6 +35,13 @@ export class LogsPage extends Component {
                      value="${this._escape(filters.model || '')}" 
                      placeholder="例如：gemini-2.0-flash" />
             </div>
+            <div class="form-group">
+              <label class="form-label">请求ID（可选）</label>
+              <input id="logRequestId"
+                     class="form-input"
+                     value="${this._escape(filters.requestId || '')}"
+                     placeholder="例如：agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </div>
             <div class="form-group" style="width:140px; flex:none">
               <label class="form-label">状态</label>
               <select id="logStatus" class="form-select">
@@ -46,7 +53,7 @@ export class LogsPage extends Component {
             <button class="btn btn-primary" data-action="apply-filter" style="align-self:flex-end">
               筛选
             </button>
-            ${filters.model || filters.status ? `
+            ${(filters.model || filters.status || filters.requestId) ? `
               <button class="btn btn-sm" data-action="clear-filter" style="align-self:flex-end">
                 清除筛选
               </button>
@@ -61,10 +68,11 @@ export class LogsPage extends Component {
               <thead>
                 <tr>
                   <th>时间</th>
+                  <th>请求ID</th>
+                  <th>尝试</th>
                   <th>模型</th>
                   <th>账号</th>
                   <th>状态</th>
-                  <th>Token</th>
                   <th>延迟</th>
                   <th>错误信息</th>
                 </tr>
@@ -102,10 +110,12 @@ export class LogsPage extends Component {
   }
 
   _renderLogRows(logs, loading) {
+    const colSpan = 8;
+
     if (loading && logs.length === 0) {
       return `
         <tr>
-          <td colspan="7" class="text-center" style="padding:48px">
+          <td colspan="${colSpan}" class="text-center" style="padding:48px">
             <div class="spinner"></div>
           </td>
         </tr>
@@ -115,7 +125,7 @@ export class LogsPage extends Component {
     if (logs.length === 0) {
       return `
         <tr>
-          <td colspan="7" class="text-center text-secondary" style="padding:48px">
+          <td colspan="${colSpan}" class="text-center text-secondary" style="padding:48px">
             暂无日志
           </td>
         </tr>
@@ -126,10 +136,24 @@ export class LogsPage extends Component {
       const isError = l.status !== 'success';
       const errorMsg = l.error_message || '';
 
+      const rid = l.request_id || '-';
+      const attemptNo = Number.isFinite(Number(l.attempt_no)) ? Number(l.attempt_no) : null;
+      const accountAttempt = Number.isFinite(Number(l.account_attempt)) ? Number(l.account_attempt) : null;
+      const sameRetry = Number.isFinite(Number(l.same_retry)) ? Number(l.same_retry) : null;
+      const attemptLabel = attemptNo !== null
+        ? `${attemptNo}${accountAttempt !== null || sameRetry !== null ? ` (acc#${accountAttempt ?? '-'} r${sameRetry ?? '-'})` : ''}`
+        : '-';
+
       return `
         <tr>
           <td class="mono" data-label="时间" style="font-size:11px;white-space:nowrap">
             ${formatTime(l.created_at)}
+          </td>
+          <td class="mono" data-label="请求ID" style="font-size:11px;white-space:nowrap">
+            ${this._escape(rid)}
+          </td>
+          <td class="mono" data-label="尝试" style="font-size:11px;white-space:nowrap">
+            ${this._escape(attemptLabel)}
           </td>
           <td class="mono" data-label="模型" style="font-size:12px">${this._escape(l.model)}</td>
           <td data-label="账号" style="font-size:12px">${this._escape(l.account_email || '-')}</td>
@@ -138,11 +162,10 @@ export class LogsPage extends Component {
               ${isError ? '失败' : '成功'}
             </span>
           </td>
-          <td class="mono" data-label="Token">${formatNumber(l.total_tokens)}</td>
           <td class="mono" data-label="延迟">${l.latency_ms}ms</td>
           <td class="error-cell" data-label="错误信息">
-            ${errorMsg 
-              ? `<span class="error-text">${this._escape(errorMsg)}</span><div class="error-tooltip" role="tooltip">${this._escape(errorMsg)}</div>` 
+            ${errorMsg
+              ? `<span class="error-text">${this._escape(errorMsg)}</span><div class="error-tooltip" role="tooltip">${this._escape(errorMsg)}</div>`
               : '<span class="text-secondary">-</span>'
             }
           </td>
@@ -212,13 +235,14 @@ export class LogsPage extends Component {
     this.on('[data-action="apply-filter"]', 'click', () => {
       const model = this.container.querySelector('#logModel')?.value || '';
       const status = this.container.querySelector('#logStatus')?.value || '';
+      const requestId = this.container.querySelector('#logRequestId')?.value || '';
       
-      commands.dispatch('logs:set-filter', { model, status });
+      commands.dispatch('logs:set-filter', { model, status, requestId });
     });
 
     // 清除筛选
     this.on('[data-action="clear-filter"]', 'click', () => {
-      commands.dispatch('logs:set-filter', { model: '', status: '' });
+      commands.dispatch('logs:set-filter', { model: '', status: '', requestId: '' });
     });
 
     // 回车筛选
@@ -226,7 +250,8 @@ export class LogsPage extends Component {
       if (e.key === 'Enter') {
         const model = e.target.value || '';
         const status = this.container.querySelector('#logStatus')?.value || '';
-        commands.dispatch('logs:set-filter', { model, status });
+        const requestId = this.container.querySelector('#logRequestId')?.value || '';
+        commands.dispatch('logs:set-filter', { model, status, requestId });
       }
     });
 
@@ -234,7 +259,8 @@ export class LogsPage extends Component {
     this.on('#logStatus', 'change', () => {
       const model = this.container.querySelector('#logModel')?.value || '';
       const status = this.container.querySelector('#logStatus')?.value || '';
-      commands.dispatch('logs:set-filter', { model, status });
+      const requestId = this.container.querySelector('#logRequestId')?.value || '';
+      commands.dispatch('logs:set-filter', { model, status, requestId });
     });
   }
 }
