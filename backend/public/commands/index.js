@@ -656,25 +656,34 @@ commands.register('oauth:start', async () => {
 
 commands.register('oauth:exchange', async ({ callbackUrl }) => {
   const port = store.get('dialogs.oauth.port');
-  
+
   // 从URL中提取code
   const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
   if (!codeMatch) {
     throw new Error('未找到授权码，请检查URL');
   }
-  
+
   const code = decodeURIComponent(codeMatch[1]);
   const urlPort = (callbackUrl.match(/localhost:(\d+)/) || [])[1];
   const finalPort = port || urlPort;
-  
+
   if (!finalPort) {
     throw new Error('未找到端口，请先点击"打开授权页面"');
   }
 
   const loading = toast.loading('正在交换Token...');
-  
+
   try {
     const result = await api.exchangeOAuthCode(code, finalPort);
+
+    // 检查是否返回了错误
+    if (result?.success === false || result?.error) {
+      const errorMsg = result?.message || result?.error?.message || '添加账号失败';
+      loading.update(errorMsg, 'error');
+      setTimeout(() => loading.close(), 2500);
+      return false;
+    }
+
     const data = result?.data || result;
     const projectId = data?.project_id || null;
 
@@ -685,7 +694,7 @@ commands.register('oauth:exchange', async ({ callbackUrl }) => {
     }
 
     setTimeout(() => loading.close(), 2500);
-    
+
     store.set('dialogs.oauth.open', false);
     await commands.dispatch('accounts:load');
     return true;

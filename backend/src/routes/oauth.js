@@ -1,5 +1,5 @@
 import { OAUTH_CONFIG } from '../config.js';
-import { createAccount, getAccountByEmail, getAccountById, updateAccountToken } from '../db/index.js';
+import { createAccount, getAccountByEmail, getAccountById } from '../db/index.js';
 import { initializeAccount } from '../services/tokenManager.js';
 import { verifyAdmin } from '../middleware/auth.js';
 
@@ -69,13 +69,16 @@ export default async function oauthRoutes(fastify) {
             let account = email ? getAccountByEmail(email) : null;
 
             if (account) {
-                // 更新现有账号的 token
-                updateAccountToken(account.id, access_token, expires_in);
-            } else {
-                // 创建新账号
-                const accountId = createAccount(email || `oauth_${Date.now()}`, refresh_token);
-                account = { id: accountId, email, refresh_token, access_token };
+                // 账号已存在，返回错误
+                return reply.code(400).send({
+                    success: false,
+                    message: `账号 ${email} 已存在`
+                });
             }
+
+            // 创建新账号
+            const accountId = createAccount(email || `oauth_${Date.now()}`, refresh_token);
+            account = { id: accountId, email, refresh_token, access_token };
 
             // 初始化账号
             try {
