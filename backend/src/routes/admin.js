@@ -2,7 +2,7 @@ import { verifyAdmin } from '../middleware/auth.js';
 import {
     getAllAccounts, getAccountById, createAccount, updateAccountStatus, deleteAccount,
     getAllAccountsForRefresh,
-    getRequestLogs, getRequestLogsTotal, getRequestStats, getModelUsageStats,
+    getRequestLogs, getRequestLogsTotal, getRequestStats, getRequestAttemptStats, getModelUsageStats, getModelAttemptUsageStats,
     getRequestAttemptLogs, getRequestAttemptLogsTotal,
     getSetting, setSetting
 } from '../db/index.js';
@@ -33,9 +33,19 @@ export default async function adminRoutes(fastify) {
         const todayStart = getDayStart(now, DASHBOARD_TZ_OFFSET_MINUTES);
 
         const accounts = getAllAccounts();
-        const todayStats = getRequestStats(todayStart, now);
-        const modelUsage = getModelUsageStats(todayStart, now);
+        const todayAttemptStats = getRequestAttemptStats(todayStart, now);  // 请求次数和成功率
+        const todayRequestStats = getRequestStats(todayStart, now);          // token 统计
+        const modelAttemptUsage = getModelAttemptUsageStats(todayStart, now); // 模型请求次数（基于 attempt）
+        const modelTokenUsage = getModelUsageStats(todayStart, now);          // 模型 token（基于 request）
         const poolStats = accountPool.getPoolStats();
+
+        // 合并模型统计：次数用 attempt 表，token 用 request 表
+        const tokenMap = new Map(modelTokenUsage.map(m => [m.model, m.tokens || 0]));
+        const modelUsage = modelAttemptUsage.map(m => ({
+            model: m.model,
+            count: m.count,
+            tokens: tokenMap.get(m.model) || 0
+        }));
 
         return {
             accounts: {
@@ -44,12 +54,12 @@ export default async function adminRoutes(fastify) {
                 error: accounts.filter(a => a.status === 'error').length
             },
             today: {
-                requests: todayStats.total_requests || 0,
-                tokens: todayStats.total_tokens || 0,
-                successRate: todayStats.total_requests > 0
-                    ? ((todayStats.success_count / todayStats.total_requests) * 100).toFixed(1)
+                requests: todayAttemptStats.total_requests || 0,
+                tokens: todayRequestStats.total_tokens || 0,
+                successRate: todayAttemptStats.total_requests > 0
+                    ? ((todayAttemptStats.success_count / todayAttemptStats.total_requests) * 100).toFixed(1)
                     : 100,
-                avgLatency: Math.round(todayStats.avg_latency || 0)
+                avgLatency: Math.round(todayAttemptStats.avg_latency || 0)
             },
             modelUsage,
             pool: poolStats
@@ -348,7 +358,7 @@ export default async function adminRoutes(fastify) {
         const startTime = start_time ? parseInt(start_time) : now - 24 * 60 * 60 * 1000;
         const endTime = end_time ? parseInt(end_time) : now;
 
-        const stats = getRequestStats(startTime, endTime);
+        const stats = getRequestAttemptStats(startTime, endTime);
         const modelUsage = getModelUsageStats(startTime, endTime);
 
         return { stats, modelUsage };

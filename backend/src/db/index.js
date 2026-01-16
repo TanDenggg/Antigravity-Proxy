@@ -418,10 +418,32 @@ export function getRequestStats(startTime, endTime) {
     `).get(startTime, endTime);
 }
 
+export function getRequestAttemptStats(startTime, endTime) {
+    return getDatabase().prepare(`
+        SELECT
+            COUNT(*) as total_requests,
+            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+            SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+            AVG(latency_ms) as avg_latency
+        FROM request_attempt_logs
+        WHERE created_at >= ? AND created_at <= ?
+    `).get(startTime, endTime);
+}
+
 export function getModelUsageStats(startTime, endTime) {
     return getDatabase().prepare(`
         SELECT model, COUNT(*) as count, SUM(total_tokens) as tokens
         FROM request_logs
+        WHERE created_at >= ? AND created_at <= ?
+        GROUP BY model
+        ORDER BY count DESC
+    `).all(startTime, endTime);
+}
+
+export function getModelAttemptUsageStats(startTime, endTime) {
+    return getDatabase().prepare(`
+        SELECT model, COUNT(*) as count
+        FROM request_attempt_logs
         WHERE created_at >= ? AND created_at <= ?
         GROUP BY model
         ORDER BY count DESC
