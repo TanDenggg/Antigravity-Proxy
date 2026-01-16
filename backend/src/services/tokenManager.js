@@ -109,13 +109,62 @@ export async function ensureValidToken(account) {
 }
 
 /**
+ * 通过 onboardUser 端点注册用户并获取 projectId（适用于从未登录过 Antigravity 的用户）
+ */
+async function onboardUser(account) {
+    const response = await fetch('https://cloudcode-pa.googleapis.com/v1internal:onboardUser', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${account.access_token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': ANTIGRAVITY_CONFIG.user_agent
+        },
+        body: JSON.stringify({
+            tierId: 'standard-tier',
+            metadata: {
+                ideType: 'ANTIGRAVITY',
+                platform: 'PLATFORM_UNSPECIFIED',
+                pluginType: 'GEMINI'
+            }
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to onboard user: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // 检查操作是否完成
+    if (!data.done) {
+        throw new Error('Onboard operation not completed');
+    }
+
+    const projectInfo = data.response?.cloudaicompanionProject;
+    if (!projectInfo?.id) {
+        throw new Error('No project ID in onboard response');
+    }
+
+    return {
+        projectId: projectInfo.id,
+        projectName: projectInfo.name,
+        projectNumber: projectInfo.projectNumber
+    };
+}
+
+/**
  * 获取账号的 projectId
+ * 1. 先尝试 loadCodeAssist（适用于已登录过的用户）
+ * 2. 如果失败或没有 projectId，调用 onboardUser 注册用户
+ * 3. 注册成功后再调用 loadCodeAssist 获取 tier
  */
 export async function fetchProjectId(account) {
+    let projectId = null;
+    let tier = 'free-tier';
+
+    // 1. 先尝试 loadCodeAssist
     try {
-        // NOTE: Use the non-sandbox endpoint for projectId discovery to match the official behavior.
-        // This avoids cases where the sandbox endpoint diverges or becomes unavailable for OAuth-onboard flows.
-        const response = await fetch(`https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`, {
+        const response = await fetch('https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${account.access_token}`,
@@ -127,29 +176,61 @@ export async function fetchProjectId(account) {
             })
         });
 
-        if (!response.ok) {
-            throw new Error(`Failed to load code assist: ${response.status}`);
+        if (response.ok) {
+            const data = await response.json();
+            projectId = data.cloudaicompanionProject;
+            tier = data.currentTier?.id || 'free-tier';
         }
-
-        const data = await response.json();
-        const projectId = data.cloudaicompanionProject;
-        const tier = data.currentTier?.id || 'free-tier';
-
-        if (projectId) {
-            updateAccountProjectId(account.id, projectId);
-            account.project_id = projectId;
-        }
-
-        updateAccountTier(account.id, tier);
-        account.tier = tier;
-
-        return {
-            projectId,
-            tier
-        };
-    } catch (error) {
-        throw error;
+    } catch {
+        // loadCodeAssist 失败，继续尝试 onboardUser
     }
+
+    // 2. 如果没有获取到 projectId，尝试 onboardUser 初始化
+    if (!projectId) {
+        try {
+            const onboardResult = await onboardUser(account);
+            projectId = onboardResult.projectId;
+
+            // 3. onboardUser 成功后，再调用 loadCodeAssist 获取 tier
+            try {
+                const response = await fetch('https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${account.access_token}`,
+                        'Content-Type': 'application/json',
+                        'User-Agent': ANTIGRAVITY_CONFIG.user_agent
+                    },
+                    body: JSON.stringify({
+                        metadata: { ideType: 'ANTIGRAVITY' }
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    tier = data.currentTier?.id || 'standard-tier';
+                }
+            } catch {
+                // 获取 tier 失败，使用默认值
+                tier = 'standard-tier';
+            }
+        } catch (onboardError) {
+            throw new Error(`无法获取 project_id: ${onboardError.message}`);
+        }
+    }
+
+    // 4. 保存结果
+    if (projectId) {
+        updateAccountProjectId(account.id, projectId);
+        account.project_id = projectId;
+    }
+
+    updateAccountTier(account.id, tier);
+    account.tier = tier;
+
+    return {
+        projectId,
+        tier
+    };
 }
 
 /**
