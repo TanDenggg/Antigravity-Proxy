@@ -563,8 +563,8 @@ function convertAnthropicMessage(msg, thinkingEnabled = false, ctx = {}) {
                         (item.thinking && typeof item.thinking.signature === 'string' ? item.thinking.signature : undefined);
 
                     // 兼容 Vertex/部分中间层：如果带 signature 但 thinking 为空字符串，
-                    // 可能在上游序列化时被当作“未设置”导致校验失败；用空格占位保证字段存在。
-                    const thinkingText = (rawSignature && rawThinking === '') ? ' ' : rawThinking;
+                    // 可能在上游序列化时被当作"未设置"导致校验失败；用零宽度空格占位保证字段存在。
+                    const thinkingText = (rawSignature && rawThinking === '') ? '\u200B' : rawThinking;
                     if (rawSignature) currentMessageThinkingSignature = rawSignature;
 
 	                regularParts.push({
@@ -585,7 +585,7 @@ function convertAnthropicMessage(msg, thinkingEnabled = false, ctx = {}) {
                 if (sig) {
                     currentMessageThinkingSignature = sig;
 	                regularParts.push({
-	                    text: ' ',
+	                    text: '\u200B',
 	                    thought: true,
 	                        thoughtSignature: sig
 	                    });
@@ -1412,7 +1412,10 @@ export function preprocessAnthropicRequest(request) {
         for (const block of msg.content) {
             if (!block || typeof block !== 'object') continue;
             if (block.type === 'text') {
-                if (typeof block.text !== 'string' || block.text === '') {
+                // Claude API 要求 text content blocks 必须包含非空白文本
+                // 不仅过滤空字符串，还要过滤只包含空白字符（空格、换行等）的文本
+                const textValue = typeof block.text === 'string' ? block.text : '';
+                if (textValue.trim() === '') {
                     didMutate = true;
                     continue;
                 }
@@ -1420,10 +1423,11 @@ export function preprocessAnthropicRequest(request) {
             filtered.push(block);
         }
 
-        // 避免空 content：用无语义空格占位（不会触发 Field required）
+        // 避免空 content：用零宽度空格占位
+        // 注意：Claude API 要求 text 必须包含非空白字符，所以使用 \u200B（零宽度空格）而不是普通空格
         if (filtered.length === 0) {
             didMutate = true;
-            filtered.push({ type: 'text', text: ' ' });
+            filtered.push({ type: 'text', text: '\u200B' });
         }
 
         return { ...msg, content: filtered };
@@ -1711,7 +1715,7 @@ export function preprocessAnthropicRequest(request) {
                 const filtered = blocks.filter(b =>
                     !(b && (b.type === 'thinking' || b.type === 'redacted_thinking') && !b.signature)
                 );
-                if (filtered.length === 0) filtered.push({ type: 'text', text: ' ' });
+                if (filtered.length === 0) filtered.push({ type: 'text', text: '\u200B' });
                 didMutate = true;
                 return { ...msg, content: filtered };
             }
@@ -1747,7 +1751,7 @@ export function preprocessAnthropicRequest(request) {
         const filteredContent = msg.content.filter(block =>
             block.type !== 'thinking' && block.type !== 'redacted_thinking'
         );
-        if (filteredContent.length === 0) filteredContent.push({ type: 'text', text: ' ' });
+        if (filteredContent.length === 0) filteredContent.push({ type: 'text', text: '\u200B' });
         return { ...msg, content: filteredContent };
     });
 
