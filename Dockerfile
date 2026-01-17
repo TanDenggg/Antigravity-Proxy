@@ -27,7 +27,7 @@ FROM node:20-alpine AS runtime
 # 镜像元信息
 LABEL org.opencontainers.image.title="Antigravity Proxy"
 LABEL org.opencontainers.image.description="AI API 代理服务，支持 Claude/Gemini 等多种模型"
-LABEL org.opencontainers.image.source="https://github.com/nicecai/Antigravity-Proxy"
+LABEL org.opencontainers.image.source="https://github.com/Kazuki-0147/Antigravity-Proxy"
 LABEL org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app

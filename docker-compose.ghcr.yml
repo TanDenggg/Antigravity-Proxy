@@ -12,7 +12,7 @@
 
 services:
   app:
-    image: ghcr.io/nicecai/antigravity-proxy:latest
+    image: ghcr.io/kazuki-0147/antigravity-proxy:latest
     container_name: antigravity-proxy
     restart: unless-stopped
     volumes:
