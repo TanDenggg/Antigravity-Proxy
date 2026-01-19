@@ -32,18 +32,11 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
 
-# 创建非 root 用户以提升安全性
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+# 创建数据目录
+RUN mkdir -p /app/data
 
 # 复制后端代码和依赖
-COPY --from=backend-builder --chown=appuser:appgroup /app/backend /app/backend
-
-# 创建数据目录并设置权限
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
-
-# 切换到非 root 用户
-USER appuser
+COPY --from=backend-builder /app/backend /app/backend
 
 # 暴露端口
 EXPOSE 3000
