@@ -15,6 +15,7 @@ services:
     image: ghcr.io/kazuki-0147/antigravity-proxy:latest
     container_name: antigravity-proxy
     restart: unless-stopped
+    user: root
     volumes:
       - ./data:/app/data
     ports:
