@@ -16,6 +16,10 @@ const TOOL_THOUGHT_SIGNATURE_TTL_MS = Number(process.env.TOOL_THOUGHT_SIGNATURE_
 const TOOL_THOUGHT_SIGNATURE_MAX = Number(process.env.TOOL_THOUGHT_SIGNATURE_MAX || 5000);
 const toolThoughtSignatureCache = new Map(); // tool_call_id -> { signature, savedAt }
 
+// Special marker: upstream returned tool_use without any thinking/signature for that tool_use_id.
+// Used to prevent lastSig fallback from replaying an unrelated signature into a message that never had thinking.
+export const CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER = '__NO_THINKING__';
+
 // Claude extended thinking: signature replay/cache (Anthropic endpoint)
 const CLAUDE_THINKING_SIGNATURE_TTL_MS = Number(process.env.CLAUDE_THINKING_SIGNATURE_TTL_MS || 24 * 60 * 60 * 1000);
 const CLAUDE_THINKING_SIGNATURE_MAX = Number(process.env.CLAUDE_THINKING_SIGNATURE_MAX || 5000);
@@ -278,7 +282,7 @@ export function getCachedClaudeToolThinking(toolCallId) {
     if (!entry) {
         // If signature was written from Anthropic endpoint, try recover from signature_cache
         const recovered = getCachedClaudeThinkingSignature(key);
-        if (recovered) {
+        if (recovered && recovered !== CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER) {
             cacheClaudeToolThinking(key, recovered, '');
             return claudeToolThinkingCache.get(key) || null;
         }

@@ -5,6 +5,7 @@ import { getMappedModel, isThinkingModel } from '../../config.js';
 import { injectClaudeToolRequiredArgPlaceholderIntoArgs, injectClaudeToolRequiredArgPlaceholderIntoSchema, needsClaudeToolRequiredArgPlaceholder, stripClaudeToolRequiredArgPlaceholderFromArgs } from './claude-tool-placeholder.js';
 import { convertJsonSchema, generateSessionId } from './schema-converter.js';
 import {
+    CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER,
     cacheClaudeAssistantSignature,
     cacheClaudeLastThinkingSignature,
     cacheClaudeThinkingSignature,
@@ -650,13 +651,21 @@ function convertAnthropicMessage(msg, thinkingEnabled = false, ctx = {}) {
                     args = injectClaudeToolRequiredArgPlaceholderIntoArgs(args || {});
                 }
                 let thoughtSignature = null;
+                let skipLastSigFallback = false;
                 if (isClaudeModel) {
                     if (currentMessageThinkingSignature) {
                         thoughtSignature = currentMessageThinkingSignature;
                     } else if (item?.id) {
-                        thoughtSignature = getCachedClaudeThinkingSignature(item.id);
+                        const recovered = getCachedClaudeThinkingSignature(item.id);
+                        if (recovered === CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER) {
+                            // Upstream originally had no thinking/signature for this tool_use_id.
+                            // Do not fall back to userKey->lastSig (would replay unrelated signature and pollute).
+                            skipLastSigFallback = true;
+                        } else if (recovered) {
+                            thoughtSignature = recovered;
+                        }
                     }
-	                    if (!thoughtSignature && userKey) {
+	                    if (!thoughtSignature && userKey && !skipLastSigFallback) {
 	                        thoughtSignature = getCachedClaudeLastThinkingSignature(userKey);
 	                        const willWriteback = !!(thoughtSignature && item?.id && shouldWritebackClaudeLastSig(userKey));
 	                        if (willWriteback) cacheClaudeThinkingSignature(item.id, thoughtSignature);
@@ -873,6 +882,13 @@ export function convertAntigravityToAnthropic(antigravityResponse, requestId, mo
             if (isClaudeModel) {
                 for (const id of toolUseIds) cacheClaudeThinkingSignature(id, messageThinkingSignature);
             }
+        }
+
+        // If upstream returned tool_use but did NOT emit thinking/signature, remember it per tool_use_id.
+        // This lets preprocessAnthropicRequest distinguish "client dropped thinking" vs "upstream had no thinking",
+        // avoiding lastSig replay pollution.
+        if (!messageThinkingSignature && toolUseIds.length > 0 && thinkingParts.length === 0 && isClaudeModel) {
+            for (const id of toolUseIds) if (id) cacheClaudeThinkingSignature(id, CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER);
         }
 
         // 确定 stop_reason
@@ -1479,6 +1495,33 @@ export function convertAntigravityToAnthropicSSE(antigravityData, requestId, mod
                 }
             });
 
+            // Upstream may legitimately return tool_use without any thinking/signature.
+            // If that happens, bind a "NO_THINKING" marker to those tool_use_ids so later request replay won't
+            // inject stale lastSig into a message that never had thinking (signature pollution).
+            if (
+                isClaudeModel &&
+                Array.isArray(newState.pendingToolUseIds) &&
+                newState.pendingToolUseIds.length > 0 &&
+                !newState.seenThinkingParts &&
+                !newState.lastThinkingSignature
+            ) {
+                if (DEBUG_CLAUDE_THINKING_SIGNATURE) {
+                    try {
+                        console.warn(JSON.stringify({
+                            kind: 'claude_thinking_signature_no_thinking',
+                            phase: 'sse_finish',
+                            requestId,
+                            userKey: newState.userKey || null,
+                            tool_use_ids: newState.pendingToolUseIds.slice(0, 20),
+                            tool_use_count: newState.pendingToolUseIds.length
+                        }));
+                    } catch { /* ignore */ }
+                }
+                for (const id of newState.pendingToolUseIds) if (id) cacheClaudeThinkingSignature(id, CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER);
+            }
+            // Stream completed; no more chances to bind pending tool_use_ids.
+            newState.pendingToolUseIds = [];
+
 	            events.push({ type: 'message_stop' });
                 newState.completed = true;
 	        }
@@ -1849,11 +1892,26 @@ export function preprocessAnthropicRequest(request) {
         const startsWithThinking = firstBlock && (firstBlock.type === 'thinking' || firstBlock.type === 'redacted_thinking');
 
         // helper：从缓存恢复 signature（优先使用该条消息内的 tool_use_id）
-        const recoverSignature = () => {
+        const recoverSignature = (opts = {}) => {
+            const respectNoThinkingMarker = !!opts.respectNoThinkingMarker;
+            let sawNoThinkingMarker = false;
+
             for (const id of toolUseIds) {
                 const recovered = getCachedClaudeThinkingSignature(id);
-                if (recovered) return recovered;
+                if (!recovered) continue;
+                if (recovered === CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER) {
+                    sawNoThinkingMarker = true;
+                    continue;
+                }
+                return recovered;
             }
+
+            // If we saw NO_THINKING marker and caller wants to respect it, return the marker
+            // so caller knows this tool_use originally had no thinking (not a dropped thinking case)
+            if (respectNoThinkingMarker && sawNoThinkingMarker) {
+                return CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER;
+            }
+
 	            // 某些回合上游不会再次下发 thoughtSignature：用 last-signature 兜底
 	            if (userKey) {
 	                const lastSig = getCachedClaudeLastThinkingSignature(userKey);
@@ -1938,7 +1996,15 @@ export function preprocessAnthropicRequest(request) {
         // Claude API 要求：当 thinking 启用时，包含 tool_use 的 assistant 消息必须以 thinking/redacted_thinking 开头。
         // 因此需要从缓存恢复 signature 并注入 redacted_thinking 块。
         if (hasToolUse && firstThinkingIndex < 0) {
-            const signature = recoverSignature();
+            const signature = recoverSignature({ respectNoThinkingMarker: true });
+
+            // If we got the NO_THINKING marker, it means upstream originally emitted tool_use without any thinking/signature.
+            // This is NOT a "client dropped thinking" case, so do not inject redacted_thinking
+            // and do not fall back to lastSig (would cause signature replay pollution).
+            if (signature === CLAUDE_THINKING_SIGNATURE_NO_THINKING_MARKER) {
+                return msg;
+            }
+
             if (signature) {
                 // 有缓存的 signature，注入 redacted_thinking 块
                 blocks.unshift({ type: 'redacted_thinking', signature });
