@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS, getMappedModel, isThinkingModel, isImageGenerationModel } from '../../config.js';
 
 import { injectClaudeToolRequiredArgPlaceholderIntoArgs, injectClaudeToolRequiredArgPlaceholderIntoSchema, needsClaudeToolRequiredArgPlaceholder, stripClaudeToolRequiredArgPlaceholderFromArgs } from './claude-tool-placeholder.js';
-import { convertTool, generateSessionId, parseDataUrl } from './schema-converter.js';
+import { convertJsonSchema, generateSessionId, parseDataUrl } from './schema-converter.js';
 import { cacheClaudeToolThinking, cacheToolThoughtSignature, getCachedClaudeToolThinking, getCachedToolThoughtSignature, logThinkingDowngrade } from './signature-cache.js';
 import { extractThoughtSignatureFromCandidate, extractThoughtSignatureFromPart } from './thought-signature-extractor.js';
 import { createToolOutputLimiter, limitToolOutput } from './tool-output-limiter.js';
@@ -328,7 +328,15 @@ export function convertOpenAIToAntigravity(openaiRequest, projectId = '', sessio
 
     // tools
     if (tools && tools.length > 0) {
-        const declarations = tools.map(convertTool);
+        // 上游是 Gemini 格式，始终需要大写 type
+        const declarations = tools.map(t => {
+            const func = t.function || t;
+            return {
+                name: func.name,
+                description: func.description || '',
+                parameters: convertJsonSchema(func.parameters, true)
+            };
+        });
         if (isClaudeModel && enableThinking && claudeToolsNeedingRequiredPlaceholder.size > 0) {
             for (const d of declarations) {
                 if (d && typeof d === 'object' && d.name && claudeToolsNeedingRequiredPlaceholder.has(d.name)) {

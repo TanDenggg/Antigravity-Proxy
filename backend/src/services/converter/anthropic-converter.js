@@ -217,7 +217,13 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
     // 如果明确设置了 thinking.type，使用该设置；否则根据模型名判断
     const thinkingEnabled = thinking?.type === 'enabled' ||
         (thinking?.type !== 'disabled' && isThinkingModel(model));
-    const thinkingBudget = thinking?.budget_tokens || DEFAULT_THINKING_BUDGET;
+
+    // Claude API 要求 budget_tokens >= 1024（且必须是有效的正整数）
+    const MIN_THINKING_BUDGET = 1024;
+    const parsedBudget = Number(thinking?.budget_tokens);
+    const rawBudget = Number.isFinite(parsedBudget) && parsedBudget > 0
+        ? Math.floor(parsedBudget)
+        : DEFAULT_THINKING_BUDGET;
 
     const hasWebSearchTool = hasAnthropicWebSearchTool(tools);
     const userKey = anthropicRequest?.metadata?.user_id || null;
@@ -232,6 +238,9 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
     const actualModelInfo = detectModelFamily(actualModel);
     const isClaudeModel = requestedModelInfo.isClaudeModel;
     const isGeminiModel = actualModelInfo.isGeminiModel;
+
+    // 只对 Claude 模型应用最小值限制
+    const thinkingBudget = isClaudeModel ? Math.max(MIN_THINKING_BUDGET, rawBudget) : rawBudget;
 
     // Claude thinking：当工具 schema 没有 required 字段时，上游偶发不下发 tool_use/tool_call（只输出 thinking 然后结束）
     const claudeToolsNeedingRequiredPlaceholder = new Set();
@@ -415,7 +424,7 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
             .filter(Boolean);
 
 	        if (normalizedTools.length > 0) {
-	            const declarations = normalizedTools.map(t => convertAnthropicTool(t, isClaudeModel));
+	            const declarations = normalizedTools.map(t => convertAnthropicTool(t));
                 if (isClaudeModel && thinkingEnabled && claudeToolsNeedingRequiredPlaceholder.size > 0) {
                     for (const d of declarations) {
                         if (d && typeof d === 'object' && d.name && claudeToolsNeedingRequiredPlaceholder.has(d.name)) {
@@ -751,14 +760,13 @@ function convertAnthropicMessage(msg, thinkingEnabled = false, ctx = {}) {
 /**
  * 转换 Anthropic 工具定义
  * @param {Object} tool - Anthropic 格式的工具定义
- * @param {boolean} isClaudeModel - 是否是 Claude 模型
  */
-function convertAnthropicTool(tool, isClaudeModel = false) {
+function convertAnthropicTool(tool) {
     return {
         name: tool.name,
         description: tool.description || '',
-        // Claude 模型不需要大写类型，Gemini 需要
-        parameters: convertJsonSchema(tool.input_schema, !isClaudeModel)
+        // 上游是 Gemini 格式，始终需要大写 type
+        parameters: convertJsonSchema(tool.input_schema, true)
     };
 }
 
