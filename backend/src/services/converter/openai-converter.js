@@ -93,7 +93,12 @@ export function convertOpenAIToAntigravity(openaiRequest, projectId = '', sessio
 
     // Claude: no topP, and extended thinking requires signature replay on tool chain
     const isClaudeModel = String(model || '').includes('claude');
-    const isGeminiModel = String(model || '').includes('gemini') || String(actualModel || '').includes('gemini');
+    // Some upstream "revision" models don't include "gemini" in the name (e.g. rev19-uic3-1p)
+    const isGeminiModel =
+        String(model || '').includes('gemini') ||
+        String(actualModel || '').includes('gemini') ||
+        String(model || '').startsWith('rev') ||
+        String(actualModel || '').startsWith('rev');
 
     // Check if this is an image generation model (no system prompt, no thinking)
     const isImageModel = isImageGenerationModel(model);
@@ -328,13 +333,14 @@ export function convertOpenAIToAntigravity(openaiRequest, projectId = '', sessio
 
     // tools
     if (tools && tools.length > 0) {
-        // 上游是 Gemini 格式，始终需要大写 type
+        // Gemini tools require uppercase types; Claude/OpenAI require standard JSON Schema (lowercase types)
+        const uppercaseTypes = isGeminiModel;
         const declarations = tools.map(t => {
             const func = t.function || t;
             return {
                 name: func.name,
                 description: func.description || '',
-                parameters: convertJsonSchema(func.parameters, true)
+                parameters: convertJsonSchema(func.parameters, uppercaseTypes)
             };
         });
         if (isClaudeModel && enableThinking && claudeToolsNeedingRequiredPlaceholder.size > 0) {

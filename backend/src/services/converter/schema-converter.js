@@ -71,6 +71,46 @@ const DANGEROUS_KEYS = new Set([
  */
 const MAX_RECURSION_DEPTH = 20;
 
+function scoreSchemaForAnyOfSelection(schema) {
+    if (!schema || typeof schema !== 'object') return -Infinity;
+    const type = typeof schema.type === 'string' ? schema.type.toLowerCase() : '';
+    let score = 0;
+
+    // Prefer structured schemas: object/array > primitives
+    if (type === 'object') score += 100;
+    else if (type === 'array') score += 80;
+    else if (type) score += 10;
+
+    if (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)) {
+        score += 20;
+        try {
+            score += Math.min(10, Object.keys(schema.properties).length);
+        } catch {
+            // ignore
+        }
+    }
+    if (schema.items) score += 10;
+    if (schema.enum) score += 5;
+    if (schema.format) score += 2;
+    if (Array.isArray(schema.required) && schema.required.length > 0) score += 1;
+
+    return score;
+}
+
+function pickBestAnyOfCandidate(candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return undefined;
+    let best = undefined;
+    let bestScore = -Infinity;
+    for (const c of candidates) {
+        const s = scoreSchemaForAnyOfSelection(c);
+        if (s > bestScore) {
+            bestScore = s;
+            best = c;
+        }
+    }
+    return best;
+}
+
 /**
  * Convert JSON Schema (remove unsupported fields; optionally uppercase types).
  *
@@ -187,7 +227,29 @@ export function convertJsonSchema(schema, uppercaseTypes = true, depth = 0) {
                 .map(s => convertJsonSchema(s, uppercaseTypes, depth + 1))
                 .filter(Boolean);
             if (newAnyOf.length > 0) {
-                converted.anyOf = newAnyOf;
+                // Claude upstream (via Antigravity) rejects many valid JSON Schema features for tools.
+                // In practice, `anyOf` in MCP tool schemas is a frequent trigger ("JSON schema is invalid").
+                // For Claude mode (lowercase types), conservatively collapse `anyOf` to the "best" candidate
+                // to keep the schema simple and acceptable.
+                if (!uppercaseTypes) {
+                    const preservedDescription = converted.description;
+                    const preservedDefault = converted.default;
+                    const chosen = pickBestAnyOfCandidate(newAnyOf);
+                    if (chosen) {
+                        for (const k of Object.keys(converted)) delete converted[k];
+                        for (const [k, v] of Object.entries(chosen)) converted[k] = v;
+                        if (preservedDescription !== undefined && converted.description === undefined) {
+                            converted.description = preservedDescription;
+                        }
+                        if (preservedDefault !== undefined && converted.default === undefined) {
+                            converted.default = preservedDefault;
+                        }
+                    } else {
+                        delete converted.anyOf;
+                    }
+                } else {
+                    converted.anyOf = newAnyOf;
+                }
             } else {
                 delete converted.anyOf;
             }

@@ -80,7 +80,8 @@ function detectModelFamily(model) {
     return {
         name,
         isClaudeModel: name.includes('claude'),
-        isGeminiModel: name.includes('gemini')
+        // Some upstream "revision" models don't include "gemini" in the name (e.g. rev19-uic3-1p)
+        isGeminiModel: name.includes('gemini') || name.startsWith('rev')
     };
 }
 
@@ -424,7 +425,7 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
             .filter(Boolean);
 
 	        if (normalizedTools.length > 0) {
-	            const declarations = normalizedTools.map(t => convertAnthropicTool(t));
+	            const declarations = normalizedTools.map(t => convertAnthropicTool(t, isGeminiModel));
                 if (isClaudeModel && thinkingEnabled && claudeToolsNeedingRequiredPlaceholder.size > 0) {
                     for (const d of declarations) {
                         if (d && typeof d === 'object' && d.name && claudeToolsNeedingRequiredPlaceholder.has(d.name)) {
@@ -761,12 +762,12 @@ function convertAnthropicMessage(msg, thinkingEnabled = false, ctx = {}) {
  * 转换 Anthropic 工具定义
  * @param {Object} tool - Anthropic 格式的工具定义
  */
-function convertAnthropicTool(tool) {
+function convertAnthropicTool(tool, uppercaseTypes = true) {
     return {
         name: tool.name,
         description: tool.description || '',
-        // 上游是 Gemini 格式，始终需要大写 type
-        parameters: convertJsonSchema(tool.input_schema, true)
+        // Gemini tools require uppercase types; Claude/OpenAI require standard JSON Schema (lowercase types)
+        parameters: convertJsonSchema(tool.input_schema, uppercaseTypes)
     };
 }
 
