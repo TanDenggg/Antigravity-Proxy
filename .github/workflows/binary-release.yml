@@ -84,10 +84,10 @@ jobs:
         shell: pwsh
         run: |
           cd dist/release
-          Expand-Archive -Path antigravity-proxy-${{ matrix.target }}.zip -DestinationPath .
+          Expand-Archive -Path antigravity-proxy-${{ matrix.target }}.zip -DestinationPath test -Force
 
           # 启动服务
-          $proc = Start-Process -FilePath ".\antigravity-proxy-${{ matrix.target }}.exe" -PassThru
+          $proc = Start-Process -FilePath ".\test\antigravity-proxy-${{ matrix.target }}.exe" -PassThru
           Start-Sleep -Seconds 5
 
           # 健康检查
