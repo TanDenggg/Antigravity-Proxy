@@ -17,6 +17,8 @@ pnpm-debug.log*
 
 # builds
 # (frontend/dist is committed to make first `npm start` fast; rebuild with `npm run -w frontend build` when changing UI)
+dist/
+.agp-cache/
 
 # local caches
 .npm-cache/

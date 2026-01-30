@@ -3,18 +3,39 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { SERVER_CONFIG } from '../config.js';
+import { resolveRuntimePath } from '../runtime/paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
 
-export function initDatabase() {
-    db = new Database(SERVER_CONFIG.db_path);
+/**
+ * 初始化数据库
+ * @param {Object} options - 配置选项
+ * @param {string} options.dbPath - 数据库路径（可选，默认使用 SERVER_CONFIG）
+ * @param {string|Object} options.nativeBinding - better-sqlite3 原生模块路径或已加载的模块
+ * @param {string} options.schemaSql - 内联的 schema SQL（可选，默认从文件读取）
+ */
+export function initDatabase(options = {}) {
+    const dbPath = resolveRuntimePath(options.dbPath || SERVER_CONFIG.db_path);
+    const nativeBinding = options.nativeBinding;
+    const schemaSql = options.schemaSql;
+
+    // 构建 better-sqlite3 选项
+    const sqliteOptions = {};
+    if (nativeBinding !== undefined && nativeBinding !== null) {
+        sqliteOptions.nativeBinding = nativeBinding;
+    }
+
+    db = new Database(dbPath, sqliteOptions);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
 
-    // 执行 schema
-    const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
+    // 执行 schema（优先使用传入的内联 SQL，否则从文件读取）
+    const schema =
+        typeof schemaSql === 'string' && schemaSql.length > 0
+            ? schemaSql
+            : readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
     db.exec(schema);
 
     // 迁移：移除 email 的 NOT NULL 约束（SQLite 需要重建表）

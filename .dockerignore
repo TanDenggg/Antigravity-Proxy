@@ -60,6 +60,12 @@ docker-compose*.yml
 dist
 build
 *.tgz
+*.tar.gz
+*.zip
+.agp-cache
+
+# ============ 构建脚本 ============
+scripts/build.js
 
 # ============ 截图等杂项 ============
 *.png

@@ -1,26 +1,10 @@
-import { Agent, ProxyAgent, setGlobalDispatcher } from 'undici';
+/**
+ * 开发环境入口
+ * 调用 startServer() 启动服务器
+ */
+import { startServer } from './index.js';
 
-function parseIntEnv(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === null || raw === '') return fallback;
-  const n = Number.parseInt(String(raw), 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-const connectTimeoutMs = parseIntEnv('FETCH_CONNECT_TIMEOUT_MS', 30000);
-const proxyUrl = process.env.OUTBOUND_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-
-try {
-  if (proxyUrl) {
-    // 让 Node 的全局 fetch 走代理（常用于国内网络 / Clash）
-    setGlobalDispatcher(new ProxyAgent({ uri: proxyUrl, connectTimeout: connectTimeoutMs }));
-  } else {
-    // 提高默认 connect timeout（undici 默认 10s，弱网下易超时）
-    setGlobalDispatcher(new Agent({ connectTimeout: connectTimeoutMs }));
-  }
-} catch (e) {
-  // ignore
-}
-
-// Start server
-import './index.js';
+startServer().catch((err) => {
+    console.error(err?.stack || String(err));
+    process.exit(1);
+});

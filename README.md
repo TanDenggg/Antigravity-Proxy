@@ -27,7 +27,43 @@
 
 ## 快速开始
 
-### 使用预构建镜像（推荐）
+### 一键安装
+
+**Linux / macOS：**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kazuki-0147/Antigravity-Proxy/main/install.sh | bash
+```
+
+**Windows (PowerShell)：**
+```powershell
+irm https://raw.githubusercontent.com/Kazuki-0147/Antigravity-Proxy/main/install.ps1 | iex
+```
+
+安装后编辑 `.env` 配置文件，然后运行可执行文件即可。
+
+**Linux 后台运行（可选）：**
+```bash
+# 创建 systemd 服务（需要 root）
+sudo tee /etc/systemd/system/antigravity.service << EOF
+[Unit]
+Description=Antigravity Proxy
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$(pwd)
+ExecStart=$(pwd)/antigravity-proxy-linux-x64
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now antigravity
+```
+
+### 使用 Docker 镜像
 
 无需克隆代码，直接拉取镜像运行：
 

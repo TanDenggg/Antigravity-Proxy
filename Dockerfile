@@ -38,7 +38,7 @@ RUN mkdir -p /app/data
 # 复制后端代码和依赖
 COPY --from=backend-builder /app/backend /app/backend
 
-# 暴露端口
+# 暴露端口（容器内部端口，通过 docker-compose 映射到宿主机 8088）
 EXPOSE 3000
 
 # 健康检查

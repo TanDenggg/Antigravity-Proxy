@@ -25,18 +25,38 @@ export const DEFAULT_OFFICIAL_SYSTEM_PROMPT =
     'You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.' +
     '**Proactiveness**';
 
-export const OFFICIAL_SYSTEM_PROMPT = String(process.env.OFFICIAL_SYSTEM_PROMPT || DEFAULT_OFFICIAL_SYSTEM_PROMPT);
+// 使用 getter 延迟读取，确保 .env 加载后再获取值
+export const OFFICIAL_SYSTEM_PROMPT_CONFIG = Object.freeze({
+    get value() {
+        return String(process.env.OFFICIAL_SYSTEM_PROMPT || DEFAULT_OFFICIAL_SYSTEM_PROMPT);
+    }
+});
 
-// 服务器配置
-export const SERVER_CONFIG = {
-    port: process.env.PORT || 3000,
-    host: process.env.HOST || '127.0.0.1',
-    db_path: process.env.DB_PATH || './data/database.sqlite',
-    admin_password: process.env.ADMIN_PASSWORD || 'admin123',
+// 兼容：直接导出（运行时读取）
+export function getOfficialSystemPrompt() {
+    return OFFICIAL_SYSTEM_PROMPT_CONFIG.value;
+}
+
+// 服务器配置（使用 getter 延迟读取，确保 .env 加载后再获取值）
+export const SERVER_CONFIG = Object.freeze({
+    get port() {
+        return process.env.PORT || 8088;
+    },
+    get host() {
+        return process.env.HOST || '127.0.0.1';
+    },
+    get db_path() {
+        return process.env.DB_PATH || './data/database.sqlite';
+    },
+    get admin_password() {
+        return process.env.ADMIN_PASSWORD || 'admin123';
+    },
     // 管理接口兼容：Authorization: Bearer <ADMIN_PASSWORD>
     // 默认开启；可通过环境变量关闭（0/false/no/off）
-    admin_password_bearer_compat: parseBoolean(process.env.ADMIN_PASSWORD_BEARER_COMPAT, true)
-};
+    get admin_password_bearer_compat() {
+        return parseBoolean(process.env.ADMIN_PASSWORD_BEARER_COMPAT, true);
+    }
+});
 
 function parseBoolean(value, defaultValue) {
     if (value === undefined || value === null || value === '') return defaultValue;

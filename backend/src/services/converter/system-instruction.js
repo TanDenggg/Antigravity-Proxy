@@ -1,4 +1,4 @@
-import { OFFICIAL_SYSTEM_PROMPT } from '../../config.js';
+import { getOfficialSystemPrompt } from '../../config.js';
 
 function normalizeSystemParts(input) {
     if (!input) return [];
@@ -53,7 +53,7 @@ function normalizeSystemParts(input) {
  * @returns {{role:'user', parts:Array}|null}
  */
 export function buildUpstreamSystemInstruction(userSystemInstruction) {
-    const official = String(OFFICIAL_SYSTEM_PROMPT || '').trim();
+    const official = String(getOfficialSystemPrompt() || '').trim();
     const userParts = normalizeSystemParts(userSystemInstruction);
 
     const parts = [];
