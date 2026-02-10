@@ -85,6 +85,47 @@ function detectModelFamily(model) {
     };
 }
 
+function extractSystemTextForPromptHints(system) {
+    if (typeof system === 'string') return system;
+    if (!Array.isArray(system)) return '';
+    return system
+        .map((item) => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item.text === 'string') return item.text;
+            return '';
+        })
+        .join('\n');
+}
+
+function extractAnthropicMessageTextForPromptHints(messages) {
+    if (!Array.isArray(messages)) return '';
+    const chunks = [];
+    for (const msg of messages) {
+        if (!msg) continue;
+        if (typeof msg.content === 'string') {
+            chunks.push(msg.content);
+            continue;
+        }
+        if (!Array.isArray(msg.content)) continue;
+        for (const block of msg.content) {
+            if (!block || typeof block !== 'object') continue;
+            if (typeof block.text === 'string') chunks.push(block.text);
+        }
+    }
+    return chunks.join('\n');
+}
+
+function hasClaudeCodePromptHints(system, messages) {
+    const promptText = `${extractSystemTextForPromptHints(system)}\n${extractAnthropicMessageTextForPromptHints(messages)}`
+        .toLowerCase();
+    if (!promptText.trim()) return false;
+    return (
+        promptText.includes('claude code') ||
+        promptText.includes("anthropic's official cli for claude") ||
+        promptText.includes('you are claude code')
+    );
+}
+
 const THINKING_EFFORT_BUDGET_MAP = Object.freeze({
     minimal: 1024,
     low: 2048,
@@ -423,11 +464,12 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
     const MIN_THINKING_BUDGET = 1024;
 
     const hasWebSearchTool = hasAnthropicWebSearchTool(tools);
+    const shouldEnableHostedWebSearch = hasWebSearchTool && hasClaudeCodePromptHints(system, messages);
     const userKey = anthropicRequest?.metadata?.user_id || null;
 
     // 获取实际模型名称
     let actualModel = getMappedModel(model);
-    if (hasWebSearchTool) {
+    if (shouldEnableHostedWebSearch) {
         // Web search requests should use Gemini's built-in search behavior
         actualModel = 'gemini-2.5-flash';
     }
@@ -540,8 +582,8 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
         candidateCount: 1
     };
 
-    // Claude 模型不支持 topP（web_search 会被映射到 Gemini，可透传 topP）
-    if ((!isClaudeModel || hasWebSearchTool) && top_p !== undefined) {
+    // Claude 模型不支持 topP（仅 hosted web_search 模式会被映射到 Gemini，可透传 topP）
+    if ((!isClaudeModel || shouldEnableHostedWebSearch) && top_p !== undefined) {
         generationConfig.topP = top_p;
     }
 
@@ -596,7 +638,7 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
         },
         model: actualModel,
         userAgent: 'antigravity',
-        requestType: hasWebSearchTool ? 'web_search' : 'agent'
+        requestType: shouldEnableHostedWebSearch ? 'web_search' : 'agent'
     };
 
     // 添加系统指令：始终注入官方系统提示词（上游可能会校验）
@@ -617,7 +659,7 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
 
     // 添加工具定义
     if (tools && tools.length > 0) {
-        if (hasWebSearchTool) {
+        if (shouldEnableHostedWebSearch) {
             request.request.tools = [{
                 googleSearch: {
                     enhancedContent: {
