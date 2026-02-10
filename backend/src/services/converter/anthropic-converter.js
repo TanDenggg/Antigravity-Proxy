@@ -97,32 +97,14 @@ function extractSystemTextForPromptHints(system) {
         .join('\n');
 }
 
-function extractAnthropicMessageTextForPromptHints(messages) {
-    if (!Array.isArray(messages)) return '';
-    const chunks = [];
-    for (const msg of messages) {
-        if (!msg) continue;
-        if (typeof msg.content === 'string') {
-            chunks.push(msg.content);
-            continue;
-        }
-        if (!Array.isArray(msg.content)) continue;
-        for (const block of msg.content) {
-            if (!block || typeof block !== 'object') continue;
-            if (typeof block.text === 'string') chunks.push(block.text);
-        }
-    }
-    return chunks.join('\n');
-}
-
-function hasClaudeCodePromptHints(system, messages) {
-    const promptText = `${extractSystemTextForPromptHints(system)}\n${extractAnthropicMessageTextForPromptHints(messages)}`
-        .toLowerCase();
-    if (!promptText.trim()) return false;
+function hasClaudeCodePromptHints(system) {
+    // 仅看 system 提示词，并使用严格标识，避免“普通上下文里提到 Claude Code 字样”误触发 hosted web_search 路由。
+    // 典型误触发案例：工具描述/技能列表里出现 "Run Codex CLI, Claude Code, OpenCode..."。
+    const systemText = extractSystemTextForPromptHints(system).toLowerCase();
+    if (!systemText.trim()) return false;
     return (
-        promptText.includes('claude code') ||
-        promptText.includes("anthropic's official cli for claude") ||
-        promptText.includes('you are claude code')
+        systemText.includes("you are claude code") ||
+        systemText.includes("claude code, anthropic's official cli for claude")
     );
 }
 
@@ -464,7 +446,7 @@ export function convertAnthropicToAntigravity(anthropicRequest, projectId = '', 
     const MIN_THINKING_BUDGET = 1024;
 
     const hasWebSearchTool = hasAnthropicWebSearchTool(tools);
-    const shouldEnableHostedWebSearch = hasWebSearchTool && hasClaudeCodePromptHints(system, messages);
+    const shouldEnableHostedWebSearch = hasWebSearchTool && hasClaudeCodePromptHints(system);
     const userKey = anthropicRequest?.metadata?.user_id || null;
 
     // 获取实际模型名称
