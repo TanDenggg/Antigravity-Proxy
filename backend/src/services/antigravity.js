@@ -14,8 +14,8 @@ function needsFakeNonStreaming(model) {
     const m = model.toLowerCase();
     // Claude 系列
     if (m.includes('claude')) return true;
-    // Gemini 3 Pro 系列
-    if (m.includes('gemini-3-pro')) return true;
+    // Gemini 3 Pro / 3.1 Pro 系列
+    if (m.includes('gemini-3-pro') || m.includes('gemini-3.1-pro')) return true;
     return false;
 }
 
@@ -57,7 +57,7 @@ function captureUpstreamRequest(kind, url, request) {
             requestType: request.requestType || null,
             body: request
         });
-        fs.appendFile(UPSTREAM_REQUEST_CAPTURE_PATH, line + '\n', () => {});
+        fs.appendFile(UPSTREAM_REQUEST_CAPTURE_PATH, line + '\n', () => { });
     } catch {
         // ignore capture failures
     }
@@ -72,7 +72,7 @@ function captureUpstreamSse(requestId, payload) {
             requestId: requestId || null,
             payload: String(payload)
         });
-        fs.appendFile(UPSTREAM_SSE_CAPTURE_PATH, line + '\n', () => {});
+        fs.appendFile(UPSTREAM_SSE_CAPTURE_PATH, line + '\n', () => { });
     } catch {
         // ignore capture failures
     }

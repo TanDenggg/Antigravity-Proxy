@@ -71,6 +71,8 @@ export const AVAILABLE_MODELS = [
     { id: 'gemini-3-flash', displayName: 'Gemini 3 Flash', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65536 },
     // 兼容：通过模型名显式启用 thinking（映射到 gemini-3-flash）
     { id: 'gemini-3-flash-thinking', displayName: 'Gemini 3 Flash (Thinking)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65536 },
+    { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
+    { id: 'gemini-3.1-pro-low', displayName: 'Gemini 3.1 Pro (Low)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
     { id: 'gemini-3-pro-high', displayName: 'Gemini 3 Pro (High)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
     { id: 'gemini-3-pro-low', displayName: 'Gemini 3 Pro (Low)', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
     { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', provider: 'google', supportsImages: true, supportsThinking: true, maxTokens: 1048576, maxOutputTokens: 65535 },
@@ -84,6 +86,8 @@ export const AVAILABLE_MODELS = [
     { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', provider: 'anthropic', supportsImages: true, supportsThinking: true, maxTokens: 200000, maxOutputTokens: 64000 },
     { id: 'claude-opus-4-5', displayName: 'Claude Opus 4.5', provider: 'anthropic', supportsImages: true, supportsThinking: false, maxTokens: 200000, maxOutputTokens: 64000 },
     { id: 'claude-opus-4-5-thinking', displayName: 'Claude Opus 4.5 (Thinking)', provider: 'anthropic', supportsImages: true, supportsThinking: true, maxTokens: 200000, maxOutputTokens: 64000 },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', provider: 'anthropic', supportsImages: true, supportsThinking: false, maxTokens: 200000, maxOutputTokens: 64000 },
+    { id: 'claude-sonnet-4-6-thinking', displayName: 'Claude Sonnet 4.6 (Thinking)', provider: 'anthropic', supportsImages: true, supportsThinking: true, maxTokens: 200000, maxOutputTokens: 64000 },
     { id: 'claude-sonnet-4-5', displayName: 'Claude Sonnet 4.5', provider: 'anthropic', supportsImages: true, supportsThinking: false, maxTokens: 200000, maxOutputTokens: 64000 },
     { id: 'claude-sonnet-4-5-thinking', displayName: 'Claude Sonnet 4.5 (Thinking)', provider: 'anthropic', supportsImages: true, supportsThinking: true, maxTokens: 200000, maxOutputTokens: 64000 },
     { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', provider: 'openai', supportsImages: false, supportsThinking: true, maxTokens: 131072, maxOutputTokens: 32768 }
@@ -94,11 +98,13 @@ export const MODEL_MAPPING = {
     'claude-opus-4-6': 'claude-opus-4-6-thinking',
     'claude-4-6-thinking': 'claude-opus-4-6-thinking',
     'claude-4-6': 'claude-opus-4-6-thinking',
+    'claude-sonnet-4-6': 'claude-sonnet-4-6-thinking',
     'claude-opus-4-5': 'claude-opus-4-5-thinking',
     // Claude Code 常用简写模型名（避免上游报 Requested entity was not found）
     'claude-4-5-thinking': 'claude-opus-4-5-thinking',
     'claude-4-5': 'claude-opus-4-5-thinking',
     // thinking 版本在上游是独立模型：不要降级到非 thinking，否则会导致工具调用场景无思维链输出
+    'claude-sonnet-4-6-thinking': 'claude-sonnet-4-6-thinking',
     'claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
     // Claude Haiku 不存在，映射到 Opus 4.6
     'claude-haiku-4-5-20251001': 'claude-opus-4-6',
@@ -119,10 +125,13 @@ export const THINKING_MODELS = [
     'gemini-2.5-pro',
     'gemini-2.5-flash-thinking',
     'gemini-3-flash-thinking',
+    'gemini-3.1-pro-high',
+    'gemini-3.1-pro-low',
     'gemini-3-pro-high',
     'gemini-3-pro-low',
     'gemini-3-pro-image',
     'claude-opus-4-6-thinking',
+    'claude-sonnet-4-6-thinking',
     'claude-opus-4-5-thinking',
     'claude-sonnet-4-5-thinking',
     'gpt-oss-120b-medium'
